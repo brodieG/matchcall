@@ -1,8 +1,10 @@
 Package: matchcall
-Title: What the package does (one line)
+Title: Augmented Version of base::match.call
 Version: 0.1
 Authors@R: "First Last <first.last@example.com> [aut, cre]"
-Description: What the package does (one paragraph)
+Description: Provides functionality similar to `base::match.call`, but allows
+  easy matching of calls earlier in the dynamic stack (i.e. `sys.calls()`), and
+  addresses some corner case "bugs" in `base::match.call`.
 Depends: R (>= 3.1.1)
 License: What license is it under?
 LazyData: true

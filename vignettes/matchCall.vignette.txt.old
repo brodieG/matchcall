@@ -1,0 +1,428 @@
+The main reason I was not able to rely on match.call() within match_call() is 
+that it appears to be buggy in some circumstances.  The first time I noticed
+this was when I got some return values of the form
+
+  fun(arg=1, ..1="hello", ..2=var, ...=list(1, 2, 3))
+
+Notice the `..1`, `..2`.  Unfortunately, I did not record the exact manner in
+which they were generated.  I do have an example that does show a different
+problem:
+  
+  fun <- function(a, ...) {
+    funin <- function() {
+      print(match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F))
+    }
+    funin()
+    print(matchCall(dots="include"))
+  }
+  fun2 <- function(...) {fun(...)}
+  fun2(1, a=5, x=3, z=1, 2, post="post")
+  // fun(a = 1, ... = list(x = 3, z = 1, 2, post = "post"))
+  // fun(a = 5, ... = list(1, x = 3, z = 1, 2, post = "post"))
+
+Notice how we lost the first argument to `fun`.  the `...` in `fun(...)` should
+contain ALL the arguments passed to fun2, since the only argument it defines is
+`...`.
+
+It is entirely possible I screwed up the invocation to `match.call()` inside
+funin(), but consider the following modification:
+
+  fun <- function(a, ...) {
+    funin <- function() {
+      print(definition <- eval(sys.call(-1)[[1]], parent.frame(2)))
+      print(call <- sys.call(sys.parent()))
+      print(match.call(definition, call, expand.dots=F))
+    }
+    funin()
+    print(matchCall(dots="include"))
+  }
+  fun2 <- function(...) {fun(...)}
+  fun2(1, a=5, x=3, z=1, 2, post="post")
+  // function(a, ...) {
+  //   funin <- function() {
+  //     print(definition <- eval(sys.call(-1)[[1]], parent.frame(2)))
+  //     print(call <- sys.call(sys.parent()))
+  //     print(match.call(definition, call, expand.dots=F))
+  //   }
+  //   funin()
+  //   print(matchCall(dots="include"))
+  // }
+  // fun(...)
+  // fun(a = 1, ... = list(x = 3, z = 1, 2, post = "post"))
+  // fun(a = 5, ... = list(1, x = 3, z = 1, 2, post = "post"))
+
+As far as I can tell `definition` is correct, as is `call`, but the result is
+wrong.  match.call() works perfectly fine if you invoke it directly, but the
+whole point of this exercise is to supplement match.call().
+
+Total side note: positional matching only work on arguments defined before 
+`...`; as far as I can tell this is not documented explicitly in R
+
+Another example.  In this case I can't even get match.call to get any of the
+`...` argument.
+
+funOut <- function(a, b, c, d, ...)
+{
+  fun <- function(a, b, ...) {
+    fun2()  
+  }
+  fun(c + 3, d / 5, ...)
+}
+
+fun2 <- function(...) {
+  call <- sys.call(sys.parent(1L))
+  print(match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F))
+  print(eval(
+    as.call(list(quote(substitute), as.call(c(quote(list), as.list(sys.call(sys.parent(1L)))[-1L])))), 
+    parent.frame(1L)
+  ) )
+  browser()
+}
+#funOut(var + 3, 5, sin(pi * 2 * var.1), x=list(1, 2, 3), 23, "hello", "world")
+funOut(1, a=5, x=3, z=1, 2, post="post")
+
+// fun(a = c + 3, b = d/5)
+// list(c + 3, d/5, x = list(1, 2, 3), "hello", "world")
+
+fun <- function(a, ...) {
+  fun2 <- function() {
+    browser()
+    print(match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F))
+  }
+  fun2()
+  #print(matchCall(dots="include"))
+}
+funOut <- function(q, w, ...) {fun(q, w, ...)}
+funOut(1, a=5, x=3, z=1, 2, post="post")
+// fun(a = q, ... = list(w, ..1, ..2, x = 3, z = 1, post = "post"))
+
+Difference betwee above two:
+- match.call caller is defined inside inner call in the second one,
+  whereas in the first one it is defined in global env (like the real
+  match call)
+- In the second one, the forwarding function (fun) has pre-defined values
+  in the call ("c+3, d/5")
+
+So let's attempt to normalize by putting the "match.call" fun inside innermost
+
+funOut <- function(a, b, c, d, ...)
+{
+  fun <- function(a, b, ...) {
+    fun2 <- function(...) {
+      call <- sys.call(sys.parent(1L))
+      print(match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F))
+      print(eval(
+        as.call(list(quote(substitute), as.call(c(quote(list), as.list(sys.call(sys.parent(1L)))[-1L])))), 
+        parent.frame(1L)
+      ) )
+      browser()
+    }
+    fun2()  
+  }
+  fun(c + 3, d / 5, ...)
+}
+funOut(1, a=5, x=3, z=1, 2, post="post")
+// fun(a = c + 3, b = d/5)
+// list(c + 3, d/5, x = 3, z = 1, post = "post")
+Nope, didn't change anything.  Now let's Pull the forwarding fun out of the wrapper:
+
+funOut <- function(a, b, c, d, ...){fun(c + 3, d / 5, ...)}
+fun <- function(a, b, ...) {
+  fun2 <- function(...) {
+    call <- sys.call(sys.parent(1L))
+    print(match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F))
+    print(eval(
+      as.call(list(quote(substitute), as.call(c(quote(list), as.list(sys.call(sys.parent(1L)))[-1L])))), 
+      parent.frame(1L)
+    ) )
+    browser()
+  }
+  fun2()  
+}
+funOut(1, a=5, x=3, z=1, 2, post="post")
+// fun(a = c + 3, b = d/5)
+// list(c + 3, d/5, x = 3, z = 1, post = "post")
+
+Still nothing.  Let's make fun-out forward all it's formals:
+
+funOut <- function(a, b, ...){fun(a, b, ...)}
+fun <- function(a, b, ...) {
+  fun2 <- function(...) {
+    call <- sys.call(sys.parent(1L))
+    print(match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F))
+    print(eval(
+      as.call(list(quote(substitute), as.call(c(quote(list), as.list(sys.call(sys.parent(1L)))[-1L])))), 
+      parent.frame(1L)
+    ) )
+    browser()
+  }
+  fun2()  
+}
+funOut(1, a=5, x=3, z=1, 2, post="post")
+
+// fun(a = a, b = b)
+// list(a, b, x = 3, z = 1, 2, post = "post")
+
+Still Nothing!  Try one fewer defined formal for fun
+
+fun <- function(a, ...) {
+  fun2 <- function(...) {
+    call <- sys.call(sys.parent(1L))
+    print(match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F))
+    print(eval(
+      as.call(list(quote(substitute), as.call(c(quote(list), as.list(sys.call(sys.parent(1L)))[-1L])))), 
+      parent.frame(1L)
+    ) )
+    browser()
+  }
+  fun2()  
+}
+funOut <- function(a, b, ...){fun(a, b, ...)}
+funOut(1, a=5, x=3, z=1, 2, post="post")
+
+// fun(a = a, ... = list(b))
+// list(a, b, b, x = 3, z = 1, 2, post = "post")
+
+Still just getting the missing ...s!  Now get rid of teh `...` in the fun2 fun def:
+
+fun <- function(a, ...) {
+  fun2 <- function() {
+    call <- sys.call(sys.parent(1L))
+    print(match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F))
+    print(eval(
+      as.call(list(quote(substitute), as.call(c(quote(list), as.list(sys.call(sys.parent(1L)))[-1L])))), 
+      parent.frame(1L)
+    ) )
+    browser()
+  }
+  fun2()  
+}
+funOut <- function(a, b, ...){fun(a, b, ...)}
+funOut(1, a=5, x=3, z=1, 2, post="post")
+
+// fun(a = a, ... = list(b, ..1, x = 3, z = 1, 2, post = "post"))
+// list(a, b, b, x = 3, z = 1, 2, post = "post")
+
+# Success!!  Somehow having the ...s in fun2 definition (but not call) is causing match.call()
+# not to attempt to grab ...s, though by removing it it now catches them wrong!
+
+# The following does not work
+
+fun1 <- function(a, ...) fun2(a, ...)
+fun2 <- function(b, ...) fun3()
+fun3 <- function() {
+  match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F)
+}
+fun1(3, "test", x=1:3, zest=list("a", 2))
+# Error in match.call(definition = eval(sys.call(-1)[[1]], parent.frame(2)),  : 
+#   ... used in a situation where it does not exist
+
+#But if you nest it lexically, it does work, albeit with the ..1, ..2 error
+
+fun1 <- function(a, ...) {
+  fun2 <- function(b, ...) {
+    fun3 <- function() {
+      match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F)
+    }
+    fun3()
+  }
+  fun2(a, ...)
+}
+fun1(3, "test", x=1:3, zest=list("a", 2))
+# fun2(b = a, ... = list("test", x = ..2, zest = ..3))
+fun1(3, "test", 1:3, list("a", 2))
+# fun2(b = a, ... = list("test", ..2, ..3))
+
+# Now add `...` in the function definition for the inner most function:
+
+fun1 <- function(a, ...) {
+  fun2 <- function(b, ...) {
+    fun3 <- function(...) {
+      match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F)
+    }
+    fun3()
+  }
+  fun2(a, ...)
+}
+fun1(3, "test", x=1:3, zest=list("a", 2))
+# fun2(b = x)
+# Now we lost all the `...`.  Use a named argument for fun3 instead of ...
+
+fun1 <- function(a, ...) {
+  fun2 <- function(b, ...) {
+    fun3 <- function(p) {
+      match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F)
+    }
+    fun3()
+  }
+  fun2(a, ...)
+}
+fun1(3, "test", x=1:3, zest=list("a", 2))
+# fun2(b = x, ... = list("test", x = ..2, zest = ..3))
+# Pretty odd, now we get ..2, and ..3.  Let's try adding more arguments to
+# fun3()
+
+fun1 <- function(a, ...) {
+  fun2 <- function(b, ...) {
+    fun3 <- function(p, p1, p2) {
+      browser()
+      match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F)
+    }
+    fun3()
+  }
+  fun2(b, ...)
+}
+fun1(3, "test", x=1:3, zest=list("a", 2))
+
+# Best I can make out is that even when passing a `definition`, `match.call` cares
+# about the function it is invoked in, and because of that all sorts of things get
+# messed up in corner cases. Some defintions before we proceed:
+# - `match.closure` is the function that we want to execute match.call against
+# - `match.invoker` is the function that runs the match.call call
+# 
+# The corner case in question is when `match.closure` has `...` in its formals
+# definition, AND it is invoked from another function that also has `...` in its
+# formals AND is forwarding them as is, for example:
+#   
+#   fun <- function(a, ...) match.closure(a, ...)
+#   fun(a, b, c, d)
+# 
+# So this is what we've found: 
+# 1. `match.fun` must be a LEXICAL parent of `match.invoke` otherwise we get error
+#    "... used in a situation where it does not exist"
+# 2. If `match.invoke` has a `...` in it's formal definition, then none of the 
+#    `...` arguments of `match.fun` are captured.
+# 3. If `match.invoke` doesn't have any formals, then match.call will grab
+#    some of the `...` values, but in weird ways, were several end up with
+#    values of `..1`, `..2`, `..3`, and some arguments are plain lost.  Exactly
+#    what gets returned here seems to be a function of how `match.closure` is
+#    called (i.e. different things happen if it get called just with `...`, vs
+#    with `...` and some named arguments.)
+# 
+# Things vary a bit if the call to `match.closure` involves named arguments,
+# vs not, but we wont' get into this here
+
+# Scenario 1: 
+
+fun1 <- function(a, ...) match.closure(a, ...)
+match.closure <- function(b, ...) match.invoker()
+match.invoker <- function() {
+  match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F)
+}
+fun1(3, "test", x=1:3, zest=list("a", 2))
+
+# Error in match.call(definition = eval(sys.call(-1)[[1]], parent.frame(2)),  : 
+#   ... used in a situation where it does not exist
+
+# Scenario 2:
+
+fun1 <- function(a, ...) {
+  match.closure <- function(b, ...) {
+    match.invoker <- function(...) {
+      match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F)
+    }
+    match.invoker()
+  }
+  match.closure(a, ...)
+}
+fun1(3, "test", x=1:3, zest=list("a", 2))
+
+# match.closure(b = a)
+
+# Scenario 3:
+
+fun1 <- function(a, ...) {
+  match.closure <- function(b, ...) {
+    match.invoker <- function() {
+      match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F)
+    }
+    match.invoker()
+  }
+  match.closure(a, ...)
+}
+fun1(3, "test", x=1:3, zest=list("a", 2))
+
+# match.closure(b = a, ... = list("test", x = ..2, zest = ..3))
+
+# -------------------------------------------------------------------------------
+# 
+fun1 <- function(a, b, ...) {
+  fun2 <- function(b, ...) {
+    fun3 <- function() {
+      browser()
+      match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F)
+    }
+    fun3()
+  }
+  fun2(a, b, ...)
+}
+fun1(3, "test", x=1:3, zest=list("a", 2), "hokey", "32")
+
+
+fun1 <- function(a, ...) {
+  fun2(a, ...)
+}
+fun2 <- function(b, ...) {
+  fun3 <- function(p) {
+    match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F)
+  }
+  fun3()
+}
+fun1(3, "test", x=1:3, zest=list("a", 2))
+
+fun1 <- function(b, ...) {
+  fun2(...)
+}
+fun2 <- function(b, ...) {
+  fun3 <- function(p) {
+    match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F)
+  }
+  fun3()
+}
+fun1(3, "test", 1:3, list("a", 2))
+
+
+
+
+
+
+
+Recreated the ..1 issue!
+
+fun <- function(a, ...) {
+  funin <- function() {
+    browser()
+    print(match.call(eval(sys.call(-1)[[1]], parent.frame(2)), sys.call(sys.parent()), expand.dots=F))
+  }
+  funin()
+  #print(matchCall(dots="include"))
+}
+fun2 <- function(q, w, ...) {fun(q, w, ...)}
+fun2(1, a=5, x=3, z=1, 2, post="post")
+
+// fun(a = q, ... = list(w, ..1, ..2, x = 3, z = 1, post = "post"))
+
+Notice how the value "2" and "a=5" have been lost.  Let's rename a to avoid a conflict:
+
+fun2(1, l=5, x=3, z=1, 2, post="post")
+// fun(a = q, ... = list(w, ..1, l = 5, x = 3, z = 1, post = "post"))
+
+Now "l=5", which replaced "a=5", works fine.  Finally, let's give our unnamed argument a name:
+fun2(1, l=5, x=3, z=1, blerg=2, post="post")
+// fun(a = q, ... = list(w, ..1, l = 5, x = 3, z = 1, blerg = 2, post = "post"))
+
+Hmm, ..1 persists.  Let's try to name the first argument:
+
+fun2(q=1, l=5, x=3, z=1, blerg=2, post="post")
+// fun(a = q, ... = list(w, ..1, l = 5, x = 3, z = 1, blerg = 2, post = "post"))
+
+Still doesn't work?
+
+So, to summarize, match.call() when used non-standardly doesn't like it when:
+- there are unnamed arguments captured by ...
+- named arguments that have the same names as formals of the ultimate target function
+  even if those named arguments are intended to be part of ... as opposed to
+  one of the named arguments (interesting, conlfict possibility here, how should
+  it resolve?)
+
+

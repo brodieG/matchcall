@@ -1,0 +1,128 @@
+---
+title: "Limitations of `match.call`"
+author: "Brodie Gaslam"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+
+vignette: >
+  %\VignetteIndexEntry{Reproducible Tests}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\usepackage[utf8]{inputenc}
+---
+
+## Overview
+
+This package was developed due to behavior of `match.call` in some very specific
+corner cases:
+
+- Attempting to match a call that occurred earlier in the dynamic stack
+- For functions that include `...` in their formals
+- And are called by functions that forward `...`
+
+## Details of the Problem
+
+Best I can make out is that even when passing a `definition`, `match.call` cares
+about the function it is invoked in, and because of that all sorts of things get
+messed up in corner cases. Some definitions before we proceed:
+- `match.closure` is the function that we want to execute match.call against
+- `match.invoker` is the function that runs the match.call call
+
+The corner case in question is when `match.closure` has `...` in its formals
+definition, AND it is invoked from another function that also has `...` in its
+formals AND is forwarding them as is, for example:
+
+```{R}
+match.closure <- function(b, ...) match.invoker()
+fun <- function(a, ...) match.closure(a, ...)
+fun(a, b, c, d)
+```
+
+Root of all evil is tied to how `match.call` matches a `...` that exists in the call.
+It will descend through the lexical stack and match the first one it finds, even
+if that one is not the one that relates to the call.  This makes sense
+as there is no way to tell `match.call` what environment to look in to expand `...`.
+This is not an issue for any of the other variables as for those we don't care about
+the variable contents, only the symbols, and that is all contained in the call itself.
+
+seems to be that \code{`match.call`} will match the variables
+in the quoted to calls to whatever it runs into first when traversing the lexical
+stack, which may well have nothing to do with what we intend it to match.
+
+## Examples of the Problems
+
+### Scenario Summary
+
+These are the various scenarios that seem to cause problems.
+
+1. `match.closure` must be a LEXICAL parent of `match.invoke` otherwise we get error
+   "... used in a situation where it does not exist"; this demonstrates that
+   match.call descends through the lexical stack, not the dynamic stack.
+2. If `match.invoke` has a `...` in it's formal definition, then none of the
+   `...` arguments of `match.closure` are captured if the call to \code{`match.invoke`}
+   doesn't also include the \code{`...`} arguments. This is because we redefine
+   \code{`...`} to be the arguments to \code{`match.invoke`}, but then our call to
+   \code{`match.invoke`} doesn't have any arguments, so no the lexically earliest
+   set of dots is empty.
+3. If `match.invoke` doesn't have any formals, then match.call will grab
+   the \code{`...`} values, but with limitations:
+   a. unnamed arguments in \code{`...`} will be consumed by the named formals of
+      \code{`match.closure`} to the extent those are not otherwise matched, but
+     these consumed arguments will not show up in the output of `match.call`
+   b. If the call to `match.closure` involves expressions, these are replaced
+      with `..1`, `..2`, etc. instead of being captured properly
+
+See below for code examples
+
+### Scenario 1:
+
+```{R}
+fun1 <- function(a, ...) match.closure(a, ...)
+match.closure <- function(b, ...) match.invoker()
+match.invoker <- function() match.call(match.closure, sys.call(sys.parent()), expand.dots=F)
+
+fun1(3, "test", x=45, zest="lemon")
+# Error in match.call(definition = eval(sys.call(-1)[[1]], parent.frame(2)),  :
+#   ... used in a situation where it does not exist
+```
+
+## Scenario 2: note here we make `match.invoker` an anonymous function for
+## the sake of compactness
+
+```{R}
+fun2 <- function(a, ...) {
+  match.closure <- function(b, ...) {
+    (function(...) match.call(match.closure, sys.call(sys.parent()), expand.dots=F))()
+  }
+  match.closure(a, ...)
+}
+fun2(3, "test", x=45, zest="lemon")
+# match.closure(b = a)
+```
+
+## Scenario 3.a:
+```{R}
+fun3 <- function(a, ...) {
+  match.closure <- function(b, c, d, ...) {
+    (function() match.call(match.closure, sys.call(sys.parent()), expand.dots=F))()
+  }
+  match.closure(a, ...)
+}
+fun3(3, "test", 59, x=45, zest="lemon", 58)
+# match.closure(b = a, c = 58, ... = list(x = 45, zest = "lemon"))
+## we lost "test" and "59", because `...` was reduced by the formals otherwise
+## not matched (`b` was directly matched by `a`), and after reduction, it was
+## used to fill the call
+
+fun3(3, "test", 59, x=45, zest="lemon", (58), (60))
+# match.closure(b = a, c = ..3, d = ..4, ... = list(x = 45, zest = "lemon"))
+## expressions are returned as their position in dots, since we lost the
+## first two elements we're left with third and fourth
+
+fun3a <- function(a, ...) {
+  match.closure <- function(b, c, d, ...) {
+    (function() match_call(dots="include", parent.offset=1L))()
+  }
+  match.closure(a, ...)
+}
+fun3a(3, "test", 59, x=45, zest="lemon", (58), (60))
+```

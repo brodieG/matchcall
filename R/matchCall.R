@@ -34,12 +34,9 @@
 #'   want to know what arguments are using default values
 #' @param parent.offset positive integer 1 length how many parents up the chain
 #'   should the match_call() be done on
-#' @param bypass.checks logical 1 length set to TRUE to skip argument validation
-#'   which will save about 20% on execution time; you should only do this after
-#'   you have confirmed things work fine as there are no guarantees on behavior
-#'   with incorrect arguments.
 #' @return the call that invoked the function match_call() is invoked from (as a
 #'   list if `eval.formals`==TRUE)
+#' @useDynLib matchcall, .registration=TRUE, .fixes="MC_"
 #' @examples
 #' fun <- function(a, b, c=TRUE, ...) {
 #'   match_call(default.formals=TRUE, dots="include")
@@ -47,6 +44,18 @@
 #' fun(5, 6, x=list(1:10, FALSE))
 
 match_call <- function(dots="expand", default.formals=FALSE, empty.formals=FALSE,
+  eval.formals=FALSE, user.formals=TRUE, parent.offset=0L, bypass.checks=FALSE)
+  .Call(
+    MC_match_call,
+    dots, default.formals, empty.formals, eval.formals, user.formals,
+    parent.offset, sys.frames(), sys.calls()
+  )
+
+#' Kept here for easy reference
+#'
+#' @keywords internal
+
+match_call_old <- function(dots="expand", default.formals=FALSE, empty.formals=FALSE,
   eval.formals=FALSE, user.formals=TRUE, parent.offset=0L, bypass.checks=FALSE) {
   if(!is_int(parent.offset)) stop("Argument `parent.offset` must be a 1 length integer vector.")
 

@@ -15,114 +15,149 @@ vignette: >
 This package was developed due to behavior of `match.call` in some very specific
 corner cases:
 
-- Attempting to match a call that occurred earlier in the dynamic stack
-- For functions that include `...` in their formals
-- And are called by functions that forward `...`
+* Attempting to match a call that occurred earlier in the dynamic stack
+* For functions that include `...` in their formals
+* And are called by functions that forward `...`
 
-## Details of the Problem
+This issue cropped up when trying to match calls that happened earlier in the
+dynamic call stack to the call to `match.call`.
 
-Best I can make out is that even when passing a `definition`, `match.call` cares
-about the function it is invoked in, and because of that all sorts of things get
-messed up in corner cases. Some definitions before we proceed:
-- `match.closure` is the function that we want to execute match.call against
-- `match.invoker` is the function that runs the match.call call
+## An Example of the Problem
 
-The corner case in question is when `match.closure` has `...` in its formals
-definition, AND it is invoked from another function that also has `...` in its
-formals AND is forwarding them as is, for example:
-
-```{R}
-match.closure <- function(b, ...) match.invoker()
-fun <- function(a, ...) match.closure(a, ...)
-fun(a, b, c, d)
+```R
+fun0 <- function(...) {
+  fun_gpar <- function(b, ...) {
+    fun_par <- function(a) 
+      match.call(fun_gpar, sys.call(sys.parent()), expand.dots=FALSE)
+    fun_par()
+  }
+  fun_gpar(...)
+}
+fun0(999, 2 + 2, 3 * pi(), 4)
 ```
 
-Root of all evil is tied to how `match.call` matches a `...` that exists in the call.
-It will descend through the lexical stack and match the first one it finds, even
-if that one is not the one that relates to the call.  This makes sense
-as there is no way to tell `match.call` what environment to look in to expand `...`.
-This is not an issue for any of the other variables as for those we don't care about
-the variable contents, only the symbols, and that is all contained in the call itself.
+Notice how:
 
-seems to be that \code{`match.call`} will match the variables
-in the quoted to calls to whatever it runs into first when traversing the lexical
-stack, which may well have nothing to do with what we intend it to match.
+* We lost the first argument (999)
+* The second and third arguments both show up as `..X` instead of their expressions
+* The second argument is mis-matched to `b` (well, you can't tell that from the
+  above, but trust me, it is).
 
-## Examples of the Problems
+Also, note that `sys.call(sys.parent())` is not the same as the default value for
+argument `call` of `match.call` even though it looks like it is.  The difference
+is in the example above, the expression is evaluated in the parent context,
+whereas the default `call` value is evaluated within `match.call`'s context.
+
+## Source of Problem
+
+The reason `match.call` doesn't work properly in the aforementioned circumstances
+is that `match.call` always uses the context of the function that invokes
+`match.call` to substitute the `...` argument, irrespective of where the call
+you are attempting to match is issued.  In our simple example, `match.call` will
+be matching the dots in the parent context of `fun_par`, instead of the parent
+context of `fun_gpar`.
+
+Since `fun_gpar` has a formal argument `b` in addition to `...`, when we invoke
+`fun_gpar(...)` the actual `...` argument inside `fun_gpar` will be the original
+`...` argument passed to `fun_gpar`, _less_ the explicit formal arguments that
+are matched.  In this case, `b` positionally matches the 999, so the `...` inside 
+`fun_gpar` no longer contains 999, but `match.call` uses this 999-less `...` to 
+match the `fun_gpar(...)` call, not the original `...` in the parent context of 
+`fun_gpar`.
+
+This behavior is not unreasonable since `match.call` doesn't provide any way to
+give it the correct context for substituting the dots in.
+
+In addition, when substituting dots, R will replace any non-constant values with
+`..X`, etc.  Not entirely clear why this happens, but it is done in this following
+snippet of code in `subDots` at lines 1258-1268 in `src/main/unique.c` (R 3.0.2):
+
+```c
+for(a = dots, b = rval, i = 1; i <= len; a = CDR(a), b = CDR(b), i++) {
+  snprintf(tbuf, 10, "..%d",i);
+  SET_TAG(b, TAG(a));
+  t = CAR(a);
+  while (TYPEOF(t) == PROMSXP)
+      t = PREXPR(t);
+  if( isSymbol(t) || isLanguage(t) )
+      SETCAR(b, mkSYMSXP(mkChar(tbuf), R_UnboundValue));   // <--- HERE
+  else
+      SETCAR(b, t);
+}
+```
+
+## More Examples
 
 ### Scenario Summary
 
-These are the various scenarios that seem to cause problems.
+Here is a comprehensive list of the scenarios that we have found to cause
+problems with `match.call`:
 
-1. `match.closure` must be a LEXICAL parent of `match.invoke` otherwise we get error
+1. `fun_gpar` must be a LEXICAL parent of `fun_par` otherwise we get error
    "... used in a situation where it does not exist"; this demonstrates that
-   match.call descends through the lexical stack, not the dynamic stack.
-2. If `match.invoke` has a `...` in it's formal definition, then none of the
-   `...` arguments of `match.closure` are captured if the call to \code{`match.invoke`}
-   doesn't also include the \code{`...`} arguments. This is because we redefine
-   \code{`...`} to be the arguments to \code{`match.invoke`}, but then our call to
-   \code{`match.invoke`} doesn't have any arguments, so no the lexically earliest
-   set of dots is empty.
-3. If `match.invoke` doesn't have any formals, then match.call will grab
-   the \code{`...`} values, but with limitations:
-   a. unnamed arguments in \code{`...`} will be consumed by the named formals of
-      \code{`match.closure`} to the extent those are not otherwise matched, but
+   `match.call` descends through the lexical stack, not the dynamic stack.
+2. If `fun_par` has a `...` in its formal definition, then none of the
+   `...` arguments of `fun_gpar` are captured if the call to `fun_gpar`
+   doesn't also include the `...` arguments. This is because we redefine
+   `...` to be the arguments to `fun_par`, but then our call to `fun_par` 
+   doesn't have any arguments, so the lexically earliest set of dots is empty.
+3. If `fun_par` doesn't have any formals, then `match.call` will grab
+   the `...` values, but with limitations:
+   a. unnamed arguments in `...` will be consumed by the named formals of
+      `fun_gpar` to the extent those are not otherwise matched, but
      these consumed arguments will not show up in the output of `match.call`
-   b. If the call to `match.closure` involves expressions, these are replaced
-      with `..1`, `..2`, etc. instead of being captured properly
+   b. If the call to `fun_gpar` involves expressions or symbols, these are 
+      replaced with `..1`, `..2`, etc. instead of being captured properly
 
-See below for code examples
+See below for actual code examples
 
 ### Scenario 1:
 
 ```{R}
-fun1 <- function(a, ...) match.closure(a, ...)
-match.closure <- function(b, ...) match.invoker()
-match.invoker <- function() match.call(match.closure, sys.call(sys.parent()), expand.dots=F)
+fun1 <- function(a, ...) fun_gpar(a, ...)
+fun_gpar <- function(b, ...) fun_par()
+fun_par <- function() match.call(fun_gpar, sys.call(sys.parent()), expand.dots=F)
 
 fun1(3, "test", x=45, zest="lemon")
 # Error in match.call(definition = eval(sys.call(-1)[[1]], parent.frame(2)),  :
 #   ... used in a situation where it does not exist
 ```
 
-## Scenario 2: note here we make `match.invoker` an anonymous function for
-## the sake of compactness
+### Scenario 2: 
+
+note here we make `fun_par` an anonymous function for the sake of compactness
 
 ```{R}
 fun2 <- function(a, ...) {
-  match.closure <- function(b, ...) {
-    (function(...) match.call(match.closure, sys.call(sys.parent()), expand.dots=F))()
+  fun_gpar <- function(b, ...) {
+    (function(...) match.call(fun_gpar, sys.call(sys.parent()), expand.dots=F))()
   }
-  match.closure(a, ...)
+  fun_gpar(a, ...)
 }
 fun2(3, "test", x=45, zest="lemon")
-# match.closure(b = a)
+# fun_gpar(b = a)
 ```
 
-## Scenario 3.a:
+### Scenario 3.a:
 ```{R}
 fun3 <- function(a, ...) {
-  match.closure <- function(b, c, d, ...) {
-    (function() match.call(match.closure, sys.call(sys.parent()), expand.dots=F))()
+  fun_gpar <- function(b, c, d, ...) {
+    (function() match.call(fun_gpar, sys.call(sys.parent()), expand.dots=F))()
   }
-  match.closure(a, ...)
+  fun_gpar(a, ...)
 }
 fun3(3, "test", 59, x=45, zest="lemon", 58)
-# match.closure(b = a, c = 58, ... = list(x = 45, zest = "lemon"))
+# fun_gpar(b = a, c = 58, ... = list(x = 45, zest = "lemon"))
 ## we lost "test" and "59", because `...` was reduced by the formals otherwise
 ## not matched (`b` was directly matched by `a`), and after reduction, it was
 ## used to fill the call
-
+```
+### Scenario 3.b:
+```{R}
 fun3(3, "test", 59, x=45, zest="lemon", (58), (60))
-# match.closure(b = a, c = ..3, d = ..4, ... = list(x = 45, zest = "lemon"))
+
+# fun_gpar(b = a, c = ..3, d = ..4, ... = list(x = 45, zest = "lemon"))
 ## expressions are returned as their position in dots, since we lost the
 ## first two elements we're left with third and fourth
 
-fun3a <- function(a, ...) {
-  match.closure <- function(b, c, d, ...) {
-    (function() match_call(dots="include", parent.offset=1L))()
-  }
-  match.closure(a, ...)
-}
-fun3a(3, "test", 59, x=45, zest="lemon", (58), (60))
 ```

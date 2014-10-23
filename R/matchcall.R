@@ -44,7 +44,7 @@
 #' fun(5, 6, x=list(1:10, FALSE))
 
 match_call <- function(dots="expand", default.formals=FALSE, empty.formals=FALSE,
-  eval.formals=FALSE, user.formals=TRUE, parent.offset=0L, bypass.checks=FALSE)
+  eval.formals=FALSE, user.formals=TRUE, parent.offset=1L)
   .Call(
     MC_match_call,
     dots, default.formals, empty.formals, eval.formals, user.formals,

@@ -50,6 +50,13 @@ match_call <- function(dots="expand", default.formals=FALSE, empty.formals=FALSE
     dots, default.formals, empty.formals, eval.formals, user.formals,
     parent.offset, sys.frames(), sys.calls()
   )
+#' Help Test Fun
+#'
+#' @export
+
+mc_test <- function(x) {
+  .Call(MC_test, x)
+}
 
 #' Kept here for easy reference
 #'

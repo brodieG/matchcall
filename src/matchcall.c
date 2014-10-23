@@ -11,10 +11,12 @@
 SEXP MC_match_call (  SEXP dots, SEXP default_formals, SEXP empty_formals, SEXP eval_formals,
   SEXP user_formals, SEXP parent_offset, SEXP sys_frames,
   SEXP sys_calls);
+SEXP MC_test (SEXP x);
 
 static const
 R_CallMethodDef callMethods[] = {
   {"match_call", (DL_FUNC) &MC_match_call, 8},
+  {"test", (DL_FUNC) &MC_test, 1},
   {NULL, NULL, 0}
 };
 
@@ -29,6 +31,16 @@ void R_init_matchcall(DllInfo *info)
   NULL, NULL);
 }
 
+/* -------------------------------------------------------------------------- *\
+|                                                                              |
+|                                  HELPER                                      |
+|                                                                              |
+\* -------------------------------------------------------------------------- */
+
+SEXP MC_test(SEXP x) {
+  Rprintf(type2char(TYPEOF(x)));
+  return R_NilValue;
+}
 /* -------------------------------------------------------------------------- *\
 |                                                                              |
 |                                  MAIN FUN                                    |
@@ -108,6 +120,5 @@ SEXP MC_match_call (
         type2char(type_tmp)
       );
   }
-
   return ScalarLogical(1);
 }

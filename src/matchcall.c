@@ -40,6 +40,36 @@ void R_init_matchcall(DllInfo *info)
 SEXP MC_test(SEXP x) {
     return ScalarLogical(asReal(x) > 1);
 }
+// Based on subDots in src/main/unique.c
+
+SEXP getDots(SEXP rho)
+{
+    SEXP rval, dots, a, b, t;
+    int len,i;
+
+    // Not sure that `findVars` makes sense here; do we really want to start
+    // diving down the lexical stack to find dots?
+
+    dots = findVar(R_DotsSymbol, rho);
+
+    if (dots == R_UnboundValue)
+      error("... used in a situation where it does not exist");
+
+    if (dots == R_MissingArg)
+      return dots;
+
+    len = length(dots);
+    PROTECT(rval=allocList(len));
+    for(a = dots, b = rval, i = 1; i <= len; a = CDR(a), b = CDR(b), i++) {
+      SET_TAG(b, TAG(a));
+      t = CAR(a);
+      while (TYPEOF(t) == PROMSXP)
+        t = PREXPR(t);
+      SETCAR(b, t);
+    }
+    UNPROTECT(1);
+    return rval;
+}
 /* -------------------------------------------------------------------------- *\
 |                                                                              |
 |                                  MAIN FUN                                    |
@@ -52,9 +82,10 @@ SEXP MC_match_call (
   SEXP dots, SEXP default_formals, SEXP empty_formals, SEXP eval_formals,
   SEXP user_formals, SEXP parent_offset, SEXP sys_frames, SEXP sys_calls
 ) {
-  R_xlen_t par_off, frame_len = 0;
+  R_xlen_t par_off, frame_len = 0, nil_frames = 0;
   SEXPTYPE sys_frames_type, sys_calls_type, type_tmp;
-  SEXP sys_frame, sys_call, sf_target, sc_target, fun;
+  SEXP sys_frame, sys_call, sf_target, sc_target, fun, formals, actuals,
+    t2, t1;
   const char * dots_char;
 
   // - Validate ----------------------------------------------------------------
@@ -93,7 +124,7 @@ SEXP MC_match_call (
       TYPEOF(parent_offset) != INTSXP && TYPEOF(parent_offset) != REALSXP
     ) || XLENGTH(parent_offset) != 1L || (par_off = asInteger(parent_offset)) < 1
   )
-    error("Argument `parent_offset` must be integer(1L) and not less than one.");
+    error("Argument `n` must be integer(1L) and not less than one.");
 
   // Validate internal inputs; these should be the call and frame stack.  Haven't
   // figured out a way to get these directly from C so we rely on generating them
@@ -115,8 +146,8 @@ SEXP MC_match_call (
       type2char(sys_calls_type)
     );
   for(
-    sys_frame = sys_frames, sys_call = sys_calls;
-    sys_frame != R_NilValue && sys_call != R_NilValue;
+    sys_frame = CDR(sys_frames), sys_call = sys_calls;  // First frame is throwaway
+    sys_call != R_NilValue;
     sys_frame = CDR(sys_frames), sys_call = CDR(sys_calls), frame_len++
   ) {
     if((type_tmp = TYPEOF(CAR(sys_frame)) != ENVSXP))
@@ -133,13 +164,18 @@ SEXP MC_match_call (
       sf_target = CAR(sys_frame);
       sc_target = CAR(sys_call);
     }
+    if(sys_frame == R_NilValue)
+      nil_frames++;
   }
-  if(sys_frame != R_NilValue || sys_call != R_NilValue)
+  if(sys_frame != R_NilValue || nil_frames > 1 || sys_call != R_NilValue)
     error("Logic Error: Call stack and frame stack of different lengths; contact maintainer.");
+
+  if(sf_target == R_NilValue)    // Ran out of frames, so look in global env
+    sf_target = R_GlobalEnv;
 
   if((R_xlen_t) par_off <= frame_len)
     error(
-      "Argument `parent.offset` (%d) is greater than stack depth (%d)",
+      "Argument `n` (%d) is greater than stack depth (%d)",
       par_off, frame_len
     );
   // Pull out function from relevant frame
@@ -151,6 +187,78 @@ SEXP MC_match_call (
 
   if (TYPEOF(fun) != CLOSXP)
       error("Unable to find a closure from within which `match_call` was called");
+
+  formals = FORMALS(fun);
+  PROTECT(actuals = CDR(sc_target));
+
+    /* If there is a ... symbol then expand it out in the sysp env
+       We need to take some care since the ... might be in the middle
+       of the actuals  */
+
+  t2 = R_MissingArg;
+  for (t1 = actuals ; t1 != R_NilValue ; t1 = CDR(t1) ) {
+    if (CAR(t1) == R_DotsSymbol) {
+      t2 = getDots(sf_target);
+      break;
+    }
+  }
+
+  if (t2 != R_MissingArg ) {  /* so we did something above */
+    if( CAR(actuals) == R_DotsSymbol ) {
+        UNPROTECT(1);
+        actuals = listAppend(t2, CDR(actuals));
+        PROTECT(actuals);
+    }
+    else {
+        for(t1=actuals; t1!=R_NilValue; t1=CDR(t1)) {
+      if( CADR(t1) == R_DotsSymbol ) {
+          tail = CDDR(t1);
+          SETCDR(t1, t2);
+          listAppend(actuals,tail);
+          break;
+      }
+    }
+  }
+    } else { /* get rid of it */
+  if( CAR(actuals) == R_DotsSymbol ) {
+      UNPROTECT(1);
+      actuals = CDR(actuals);
+      PROTECT(actuals);
+  }
+  else {
+      for(t1=actuals; t1!=R_NilValue; t1=CDR(t1)) {
+    if( CADR(t1) == R_DotsSymbol ) {
+        tail = CDDR(t1);
+        SETCDR(t1, tail);
+        break;
+    }
+      }
+  }
+    }
+    rlist = matchArgs(formals, actuals, call);
+
+    /* Attach the argument names as tags */
+
+    for (f = formals, b = rlist; b != R_NilValue; b = CDR(b), f = CDR(f)) {
+  SET_TAG(b, TAG(f));
+    }
+
+
+    /* Handle the dots */
+
+    PROTECT(rlist = ExpandDots(rlist, expdots));
+
+    /* Eliminate any unmatched formals and any that match R_DotSymbol */
+    /* This needs to be after ExpandDots as the DOTSXP might match ... */
+
+    rlist = StripUnmatched(rlist);
+
+    PROTECT(rval = allocSExp(LANGSXP));
+    SETCAR(rval, duplicate(CAR(funcall)));
+    SETCDR(rval, rlist);
+    UNPROTECT(4);
+    return rval;
+
 
   // - Do Matching -------------------------------------------------------------
 

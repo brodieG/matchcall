@@ -171,6 +171,8 @@ SEXP MC_match_call (
   if(sys_frame != R_NilValue || sys_call != R_NilValue) {
     error("Logic Error: Call stack and frame stack of different lengths; contact maintainer.");
   }
+  if(frame_len == 1)
+    error("You must run `match_call` within a closure, but it appears you are doing so from top level.");
   if(frame_len <= par_off)
     error(
       "Argument `n` (%d) is greater than stack depth (%d)",
@@ -191,7 +193,7 @@ SEXP MC_match_call (
     frame_len++;
     if(frame_len == frame_stop)
       sc_target = CAR(sys_call);
-    else if(frame_len - 1 == frame_stop)   // Frame we want is one before the call
+    else if(frame_len + 1 == frame_stop)   // Frame we want is one before the call
       sf_target = CAR(sys_frame);
   }
   if(sf_target == R_NilValue)    // Ran out of frames, so look in global env
@@ -259,23 +261,21 @@ SEXP MC_match_call (
   // Manufacture call to `match.call` now that we have found the dots (this is
   // taken from Writing R Extensions)
 
-  SEXP s, t;
+  SEXP t, u;  // Need to create a quoted version of the call we captured
+  u = PROTECT(allocList(2));
+  SET_TYPEOF(u, LANGSXP);
+  SETCAR(u, install("quote"));
+  SETCADR(u, sc_target);
 
-  t = s = PROTECT(allocList(4));
-  SET_TYPEOF(s, LANGSXP);
-  SETCAR(t, install("match.call")); t = CDR(t);
-  SETCAR(t, fun); t = CDR(t);
-  SETCAR(t, sc_target); t = CDR(t);
-  SETCAR(t, PROTECT(ScalarLogical(!strcmp(CHAR(asChar(dots)), "expand"))));
+  t = PROTECT(allocList(4));
+  SETCAR(t, install("match.call"));
+  SETCADR(t, fun);
+  SETCADDR(t, u);
+  SETCADDDR(t, PROTECT(ScalarLogical(!strcmp(CHAR(asChar(dots)), "expand"))));
+  SET_TYPEOF(t, LANGSXP);
 
   // - Finalize ----------------------------------------------------------------
 
-  SEXP tlist;
-  for(tlist = s; tlist != R_NilValue; tlist = CDR(tlist)) {
-    PrintValue(CAR(tlist));
-  }
-
-  UNPROTECT(4);
-  Rprintf("%s\n", asChar(t));
+  UNPROTECT(5);
   return eval(t, sf_target);
 }

@@ -3,11 +3,11 @@
 #' Similar to \code{`\link{match.call}`}, but is designed specifically to match
 #' calls from the dynamic call stack.  Which call is matched is controlled by the
 #' \code{`n`} argument, which is analgous to the \code{`n`} argument
-#' for \code{`\link{sys.parent}`}.  
-#' 
+#' for \code{`\link{sys.parent}`}.
+#'
 #' You can also use \code{`match.call`} to match arbitrary calls from the
-#' call stack, but it is simpler to do so using \code{`match_call`}.  See examples 
-#' for illustration of differences between \code{`\link{match.call}`} and 
+#' call stack, but it is simpler to do so using \code{`match_call`}.  See examples
+#' for illustration of differences between \code{`\link{match.call}`} and
 #' \code{`match_call`}.  Additionally, there are some corner cases where
 #' \code{`\link{match.call}`} does not behave as expected (see vignette).
 #'
@@ -15,7 +15,7 @@
 #' @param n integer(1L) how many frames to look up the call stack, analogous to
 #'   the \code{`n`} parameter for \code{`\link{sys.parent}`}.
 #' @param dots character(1L) "exclude": do not include dots, "include": include
-#'   them, "expand": include and expand (note last two only include dots if 
+#'   them, "expand": include and expand (note last two only include dots if
 #'   there are actually args matched by dots)
 #' @param default.formals set to TRUE to include formals not specified in call
 #'   though under no circumstances will it return ellipses even if you do
@@ -41,11 +41,11 @@
 #'   cat("**Matching Parent Call**\n")
 #'   print(match.call())
 #'   print(match_call())
-#'  
+#'
 #'   cat("\n**Matching Grand-Parent Call**\n")
 #'   print(match.call(fun2, sys.call(sys.parent())))
 #'   print(match_call(2))
-#' } 
+#' }
 #' fun2 <- function(c, d) fun1(a + 1, b - 1)
 #' fun2(25, pi() + 3)
 #' # Other examples

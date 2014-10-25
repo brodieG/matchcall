@@ -82,7 +82,7 @@ SEXP MC_match_call (
   SEXP dots, SEXP default_formals, SEXP empty_formals, SEXP eval_formals,
   SEXP user_formals, SEXP parent_offset, SEXP sys_frames, SEXP sys_calls
 ) {
-  R_xlen_t par_off, frame_len = 0, nil_frames = 0;
+  R_xlen_t par_off, frame_len = 0, frame_stop;
   SEXPTYPE sys_frames_type, sys_calls_type, type_tmp;
   SEXP sys_frame, sys_call, sf_target, sc_target, fun, formals, actuals,
     t2, t1;
@@ -145,11 +145,18 @@ SEXP MC_match_call (
       "Logic Error: unexpected system calls type %s, should be a list of dotted pairs ; contact maintainer.",
       type2char(sys_calls_type)
     );
+
+  // - Retrieve Call & Frame ---------------------------------------------------
+
+  // Need to count frames b/c we need to calculate the offset from the end of
+  // the frame list
+
   for(
-    sys_frame = CDR(sys_frames), sys_call = sys_calls;  // First frame is throwaway
-    sys_call != R_NilValue;
-    sys_frame = CDR(sys_frames), sys_call = CDR(sys_calls), frame_len++
+    sys_frame = sys_frames, sys_call = sys_calls;
+    sys_call != R_NilValue && sys_frame != R_NilValue;
+    sys_frame = CDR(sys_frame), sys_call = CDR(sys_call)
   ) {
+    frame_len++;
     if((type_tmp = TYPEOF(CAR(sys_frame)) != ENVSXP))
       error(
         "Logic Error: system frames contains non-environment (%s) element; contact maintainer.",
@@ -160,24 +167,38 @@ SEXP MC_match_call (
         "Logic Error: system frames contains non-language (%s) element; contact maintainer.",
         type2char(type_tmp)
       );
-    if(frame_len == par_off) {
-      sf_target = CAR(sys_frame);
-      sc_target = CAR(sys_call);
-    }
-    if(sys_frame == R_NilValue)
-      nil_frames++;
   }
-  if(sys_frame != R_NilValue || nil_frames > 1 || sys_call != R_NilValue)
+  if(sys_frame != R_NilValue || sys_call != R_NilValue) {
     error("Logic Error: Call stack and frame stack of different lengths; contact maintainer.");
+  }
+  if(frame_len <= par_off)
+    error(
+      "Argument `n` (%d) is greater than stack depth (%d)",
+      par_off, frame_len - 1
+    );
 
+  frame_stop = frame_len - par_off;
+
+  // Now that we know what frame we want, get it
+
+  sf_target = R_NilValue;
+
+  for(
+    sys_frame = sys_frames, sys_call = sys_calls, frame_len = 0;
+    sys_call != R_NilValue && sys_frame != R_NilValue;
+    sys_frame = CDR(sys_frame), sys_call = CDR(sys_call)
+  ) {
+    frame_len++;
+    if(frame_len == frame_stop)
+      sc_target = CAR(sys_call);
+    else if(frame_len - 1 == frame_stop)   // Frame we want is one before the call
+      sf_target = CAR(sys_frame);
+  }
   if(sf_target == R_NilValue)    // Ran out of frames, so look in global env
     sf_target = R_GlobalEnv;
 
-  if((R_xlen_t) par_off <= frame_len)
-    error(
-      "Argument `n` (%d) is greater than stack depth (%d)",
-      par_off, frame_len
-    );
+  // - Dots --------------------------------------------------------------------
+
   // Pull out function from relevant frame
 
   if(TYPEOF(CAR(sc_target)) == SYMSXP)
@@ -189,6 +210,7 @@ SEXP MC_match_call (
       error("Unable to find a closure from within which `match_call` was called");
 
   formals = FORMALS(fun);
+
   PROTECT(actuals = CDR(sc_target));
 
     /* If there is a ... symbol then expand it out in the sysp env
@@ -202,223 +224,58 @@ SEXP MC_match_call (
       break;
     }
   }
+  SEXP tail;
 
-  if (t2 != R_MissingArg ) {  /* so we did something above */
-    if( CAR(actuals) == R_DotsSymbol ) {
-        UNPROTECT(1);
-        actuals = listAppend(t2, CDR(actuals));
-        PROTECT(actuals);
+  if (t2 != R_MissingArg && strcmp(CHAR(asChar(dots)), "exclude")) {  /* so we did something above */
+    if(CAR(actuals) == R_DotsSymbol ) {
+      UNPROTECT(1);
+      actuals = listAppend(t2, CDR(actuals));
+      PROTECT(actuals);
     }
     else {
-        for(t1=actuals; t1!=R_NilValue; t1=CDR(t1)) {
-      if( CADR(t1) == R_DotsSymbol ) {
+      for(t1=actuals; t1!=R_NilValue; t1=CDR(t1)) {
+        if( CADR(t1) == R_DotsSymbol ) {
           tail = CDDR(t1);
           SETCDR(t1, t2);
           listAppend(actuals,tail);
           break;
+        }
       }
     }
-  }
-    } else { /* get rid of it */
-  if( CAR(actuals) == R_DotsSymbol ) {
-      UNPROTECT(1);
-      actuals = CDR(actuals);
-      PROTECT(actuals);
-  }
-  else {
+  } else { /* get rid of it */
+    if( CAR(actuals) == R_DotsSymbol ) {
+        UNPROTECT(1);
+        actuals = CDR(actuals);
+        PROTECT(actuals);
+    } else {
       for(t1=actuals; t1!=R_NilValue; t1=CDR(t1)) {
-    if( CADR(t1) == R_DotsSymbol ) {
-        tail = CDDR(t1);
-        SETCDR(t1, tail);
-        break;
-    }
-      }
-  }
-    }
-    rlist = matchArgs(formals, actuals, call);
+        if( CADR(t1) == R_DotsSymbol ) {
+          tail = CDDR(t1);
+          SETCDR(t1, tail);
+          break;
+  } } } }
+  // - Invoke `match.call` -----------------------------------------------------
 
-    /* Attach the argument names as tags */
+  // Manufacture call to `match.call` now that we have found the dots (this is
+  // taken from Writing R Extensions)
 
-    for (f = formals, b = rlist; b != R_NilValue; b = CDR(b), f = CDR(f)) {
-  SET_TAG(b, TAG(f));
-    }
+  SEXP s, t;
 
-
-    /* Handle the dots */
-
-    PROTECT(rlist = ExpandDots(rlist, expdots));
-
-    /* Eliminate any unmatched formals and any that match R_DotSymbol */
-    /* This needs to be after ExpandDots as the DOTSXP might match ... */
-
-    rlist = StripUnmatched(rlist);
-
-    PROTECT(rval = allocSExp(LANGSXP));
-    SETCAR(rval, duplicate(CAR(funcall)));
-    SETCDR(rval, rlist);
-    UNPROTECT(4);
-    return rval;
-
-
-  // - Do Matching -------------------------------------------------------------
-
-  // SEXP formals, actuals, rlist;
-  // SEXP funcall, f, b, rval, sysp, t1, t2, tail;
-  // RCNTXT *cptr;
-  // int expdots;
-
-  // checkArity(op,args);
-
-  // funcall = CADR(args);
-
-  // if (TYPEOF(funcall) == EXPRSXP)
-  // funcall = VECTOR_ELT(funcall, 0);
-
-  //   if (TYPEOF(funcall) != LANGSXP)
-  // error(_("invalid '%s' argument"), "call");
-
-    /* Get the function definition */
-    // sysp = R_GlobalContext->sysparent;   // Take this to be the parent frame
-
-  //   if (TYPEOF(CAR(args)) == NILSXP) {
-  // /* Get the env that the function containing */
-  // /* matchcall was called from. */
-  // cptr = R_GlobalContext;
-  // while (cptr != NULL) {
-  //     if (cptr->callflag & CTXT_FUNCTION && cptr->cloenv == sysp)
-  //   break;
-  //     cptr = cptr->nextcontext;
-  // }
-  // if ( cptr == NULL ) {
-  //     sysp = R_GlobalEnv;
-  //     errorcall(R_NilValue,
-  //         "match.call() was called from outside a function");
-  // } else
-  //     sysp = cptr->sysparent;
-  // if (cptr != NULL)
-  //     /* Changed to use the function from which match.call was
-  //        called as recorded in the context.  This change is
-  //        needed in case the current function is computed in a
-  //        way that cannot be reproduced by a second computation,
-  //        or if it is a registered S3 method that is not
-  //        lexically visible at the call site.
-
-  //        There is one particular case where this represents a
-  //        change from previous semantics: The definition is NULL,
-  //        the call is supplied explicitly, and the function in
-  //        the call is NOT the current function.  The new behavior
-  //        is to ignore the function in the call and use the
-  //        current function.  This is consistent with (my reading
-  //        of) the documentation in both R and Splus.  However,
-  //        the old behavior of R was consistent with the behavior
-  //        of Splus (and inconsistent with the documentation in
-  //        both cases).
-
-  //        The previous semantics for this case can be restored by
-  //        having the .Internal receive an additional argument
-  //        that indicates whether the call was supplied explicitly
-  //        or missing, and using the function recorded in the
-  //        context only if the call was not supplied explicitly.
-  //        The documentation should also be changed to be
-  //        consistent with this behavior.  LT */
-  //     PROTECT(b = duplicate(cptr->callfun));
-  // else if ( TYPEOF(CAR(funcall)) == SYMSXP )
-  //     PROTECT(b = findFun(CAR(funcall), sysp));
-  // else
-  //     PROTECT(b = eval(CAR(funcall), sysp));
-
-  // if (TYPEOF(b) != CLOSXP)
-  //     error(_("unable to find a closure from within which 'match.call' was called"));
-
-  //   }
-  //   else {
-  // /* It must be a closure! */
-  // PROTECT(b = CAR(args));
-  // if (TYPEOF(b) != CLOSXP)
-  //     error(_("invalid '%s' argument"), "definition");
-  //   }
-
-  //   /* Do we expand ... ? */
-
-  //   expdots = asLogical(CAR(CDDR(args)));
-  //   if (expdots == NA_LOGICAL)
-  // error(_("invalid '%s' argument"), "expand.dots");
-
-  //   /* Get the formals and match the actual args */
-
-  //   formals = FORMALS(b);
-  //   PROTECT(actuals = duplicate(CDR(funcall)));
-
-  //   /* If there is a ... symbol then expand it out in the sysp env
-  //      We need to take some care since the ... might be in the middle
-  //      of the actuals  */
-
-  //   t2 = R_MissingArg;
-  //   for (t1=actuals ; t1!=R_NilValue ; t1 = CDR(t1) ) {
-  // if (CAR(t1) == R_DotsSymbol) {
-  //   t2 = subDots(sysp);
-  //   break;
-  // }
-  //   }
-  //   /* now to splice t2 into the correct spot in actuals */
-  //   if (t2 != R_MissingArg ) {  /* so we did something above */
-  // if( CAR(actuals) == R_DotsSymbol ) {
-  //     UNPROTECT(1);
-  //     actuals = listAppend(t2, CDR(actuals));
-  //     PROTECT(actuals);
-  // }
-  // else {
-  //     for(t1=actuals; t1!=R_NilValue; t1=CDR(t1)) {
-  //   if( CADR(t1) == R_DotsSymbol ) {
-  //       tail = CDDR(t1);
-  //       SETCDR(t1, t2);
-  //       listAppend(actuals,tail);
-  //       break;
-  //   }
-  //     }
-  // }
-  //   } else { /* get rid of it */
-  // if( CAR(actuals) == R_DotsSymbol ) {
-  //     UNPROTECT(1);
-  //     actuals = CDR(actuals);
-  //     PROTECT(actuals);
-  // }
-  // else {
-  //     for(t1=actuals; t1!=R_NilValue; t1=CDR(t1)) {
-  //   if( CADR(t1) == R_DotsSymbol ) {
-  //       tail = CDDR(t1);
-  //       SETCDR(t1, tail);
-  //       break;
-  //   }
-  //     }
-  // }
-  //   }
-  //   rlist = matchArgs(formals, actuals, call);
-
-  //   /* Attach the argument names as tags */
-
-  //   for (f = formals, b = rlist; b != R_NilValue; b = CDR(b), f = CDR(f)) {
-  // SET_TAG(b, TAG(f));
-  //   }
-
-
-  //   /* Handle the dots */
-
-  //   PROTECT(rlist = ExpandDots(rlist, expdots));
-
-  //   /* Eliminate any unmatched formals and any that match R_DotSymbol */
-  //   /* This needs to be after ExpandDots as the DOTSXP might match ... */
-
-  //   rlist = StripUnmatched(rlist);
-
-  //   PROTECT(rval = allocSExp(LANGSXP));
-  //   SETCAR(rval, duplicate(CAR(funcall)));
-  //   SETCDR(rval, rlist);
-  //   UNPROTECT(4);
-  //   return rval;
-
+  t = s = PROTECT(allocList(4));
+  SET_TYPEOF(s, LANGSXP);
+  SETCAR(t, install("match.call")); t = CDR(t);
+  SETCAR(t, fun); t = CDR(t);
+  SETCAR(t, sc_target); t = CDR(t);
+  SETCAR(t, PROTECT(ScalarLogical(!strcmp(CHAR(asChar(dots)), "expand"))));
 
   // - Finalize ----------------------------------------------------------------
 
-  return ScalarLogical(1);
+  SEXP tlist;
+  for(tlist = s; tlist != R_NilValue; tlist = CDR(tlist)) {
+    PrintValue(CAR(tlist));
+  }
+
+  UNPROTECT(4);
+  Rprintf("%s\n", asChar(t));
+  return eval(t, sf_target);
 }

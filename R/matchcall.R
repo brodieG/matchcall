@@ -59,7 +59,7 @@ match_call <- function(n=1L, dots="expand", default.formals=FALSE, empty.formals
   .Call(
     MC_match_call,
     dots, default.formals, empty.formals, eval.formals, user.formals,
-    n, sys.frames(), sys.calls()
+    n, sys.frames(), sys.calls()  # note slightly faster than `sys.frame` and `sys.call`, for some reason
   )
 #' Help Test Fun
 #'

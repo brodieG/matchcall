@@ -1,11 +1,11 @@
 ---
-title: "Limitations of `match.call`"
+title: "`match.call` Corner Cases"
 author: "Brodie Gaslam"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 
 vignette: >
-  %\VignetteIndexEntry{Reproducible Tests}
+  %\VignetteIndexEntry{match.call Corner Cases}
   %\VignetteEngine{knitr::rmarkdown}
   %\usepackage[utf8]{inputenc}
 ---
@@ -24,10 +24,10 @@ dynamic call stack to the call to `match.call`.
 
 ## An Example of the Problem
 
-```R
+```{r}
 fun0 <- function(...) {
   fun_gpar <- function(b, ...) {
-    fun_par <- function(a) 
+    fun_par <- function(a)
       match.call(fun_gpar, sys.call(sys.parent()), expand.dots=FALSE)
     fun_par()
   }
@@ -60,9 +60,9 @@ context of `fun_gpar`.
 Since `fun_gpar` has a formal argument `b` in addition to `...`, when we invoke
 `fun_gpar(...)` the actual `...` argument inside `fun_gpar` will be the original
 `...` argument passed to `fun_gpar`, _less_ the explicit formal arguments that
-are matched.  In this case, `b` positionally matches the 999, so the `...` inside 
-`fun_gpar` no longer contains 999, but `match.call` uses this 999-less `...` to 
-match the `fun_gpar(...)` call, not the original `...` in the parent context of 
+are matched.  In this case, `b` positionally matches the 999, so the `...` inside
+`fun_gpar` no longer contains 999, but `match.call` uses this 999-less `...` to
+match the `fun_gpar(...)` call, not the original `...` in the parent context of
 `fun_gpar`.
 
 This behavior is not unreasonable since `match.call` doesn't provide any way to
@@ -85,7 +85,6 @@ for(a = dots, b = rval, i = 1; i <= len; a = CDR(a), b = CDR(b), i++) {
       SETCAR(b, t);
 }
 ```
-
 ## More Examples
 
 ### Scenario Summary
@@ -99,47 +98,45 @@ problems with `match.call`:
 2. If `fun_par` has a `...` in its formal definition, then none of the
    `...` arguments of `fun_gpar` are captured if the call to `fun_gpar`
    doesn't also include the `...` arguments. This is because we redefine
-   `...` to be the arguments to `fun_par`, but then our call to `fun_par` 
+   `...` to be the arguments to `fun_par`, but then our call to `fun_par`
    doesn't have any arguments, so the lexically earliest set of dots is empty.
 3. If `fun_par` doesn't have any formals, then `match.call` will grab
    the `...` values, but with limitations:
    a. unnamed arguments in `...` will be consumed by the named formals of
       `fun_gpar` to the extent those are not otherwise matched, but
      these consumed arguments will not show up in the output of `match.call`
-   b. If the call to `fun_gpar` involves expressions or symbols, these are 
+   b. If the call to `fun_gpar` involves expressions or symbols, these are
       replaced with `..1`, `..2`, etc. instead of being captured properly
 
 See below for actual code examples
 
 ### Scenario 1:
 
-```{R}
+```{r, error=TRUE, purl=FALSE}
 fun1 <- function(a, ...) fun_gpar(a, ...)
 fun_gpar <- function(b, ...) fun_par()
 fun_par <- function() match.call(fun_gpar, sys.call(sys.parent()), expand.dots=F)
 
 fun1(3, "test", x=45, zest="lemon")
-# Error in match.call(definition = eval(sys.call(-1)[[1]], parent.frame(2)),  :
-#   ... used in a situation where it does not exist
 ```
 
-### Scenario 2: 
+### Scenario 2:
 
 note here we make `fun_par` an anonymous function for the sake of compactness
 
-```{R}
+```{r}
 fun2 <- function(a, ...) {
   fun_gpar <- function(b, ...) {
     (function(...) match.call(fun_gpar, sys.call(sys.parent()), expand.dots=F))()
   }
   fun_gpar(a, ...)
 }
+
 fun2(3, "test", x=45, zest="lemon")
-# fun_gpar(b = a)
 ```
 
 ### Scenario 3.a:
-```{R}
+```{r}
 fun3 <- function(a, ...) {
   fun_gpar <- function(b, c, d, ...) {
     (function() match.call(fun_gpar, sys.call(sys.parent()), expand.dots=F))()
@@ -147,17 +144,14 @@ fun3 <- function(a, ...) {
   fun_gpar(a, ...)
 }
 fun3(3, "test", 59, x=45, zest="lemon", 58)
-# fun_gpar(b = a, c = 58, ... = list(x = 45, zest = "lemon"))
-## we lost "test" and "59", because `...` was reduced by the formals otherwise
-## not matched (`b` was directly matched by `a`), and after reduction, it was
-## used to fill the call
 ```
+We lost "test" and "59", because `...` was reduced by the formals otherwise
+not matched (`b` was directly matched by `a`), and after reduction, it was
+used to fill the call.
+
 ### Scenario 3.b:
-```{R}
+```{r}
 fun3(3, "test", 59, x=45, zest="lemon", (58), (60))
-
-# fun_gpar(b = a, c = ..3, d = ..4, ... = list(x = 45, zest = "lemon"))
-## expressions are returned as their position in dots, since we lost the
-## first two elements we're left with third and fourth
-
 ```
+
+Expressions are returned as their position in dots, since we lost the first two elements we're left with third and fourth.

@@ -239,7 +239,7 @@ SEXP MC_match_call (
         if( CADR(t1) == R_DotsSymbol ) {
           tail = CDDR(t1);
           SETCDR(t1, t2);
-          listAppend(actuals,tail);
+          listAppend(actuals, tail);
           break;
         }
       }
@@ -256,6 +256,10 @@ SEXP MC_match_call (
           SETCDR(t1, tail);
           break;
   } } } }
+  // Reconstruct the original call in case we messed with dots
+
+  SETCDR(sc_target, actuals);
+
   // - Invoke `match.call` -----------------------------------------------------
 
   // Manufacture call to `match.call` now that we have found the dots (this is
@@ -271,11 +275,51 @@ SEXP MC_match_call (
   SETCAR(t, install("match.call"));
   SETCADR(t, fun);
   SETCADDR(t, u);
-  SETCADDDR(t, PROTECT(ScalarLogical(!strcmp(CHAR(asChar(dots)), "expand"))));
+  SETCADDDR(t, PROTECT(ScalarLogical(0)));  // Do not expand dots ever, done below
   SET_TYPEOF(t, LANGSXP);
+
+  SEXP match_res;
+
+  UNPROTECT(5);
+  match_res = PROTECT(eval(t, sf_target));
+
+  // - Manipulate Result -------------------------------------------------------
+
+  // Expand or drop dots as appropriate
+
+  SEXP matched, matched2;
+  matched = CDR(match_res);
+
+  if(!strcmp("exclude", CHAR(asChar(dots)))) {  // Has to be expand or exclude
+    if(TAG(matched) == R_DotsSymbol) {
+      matched = CDR(matched);                   // Drop dots
+    } else {
+      for(matched2 = matched; matched2 != R_NilValue; matched2 = CDR(matched2)) {
+        if(TAG(CDR(matched2)) == R_DotsSymbol) {
+          tail = CDDR(matched2);
+          SETCDR(matched2, tail);              // Drop dots
+          break;
+    } } }
+  } else if (!strcmp("expand", CHAR(asChar(dots)))) {
+    if(TAG(matched) == R_DotsSymbol) {
+      if(TYPEOF(CAR(matched)) != 2)
+        error("Logic Error, expected a pair list as the values");
+      matched = listAppend(CAR(matched), CDR(matched));  // Expand dots
+    } else {
+      for(matched2 = matched; matched2 != R_NilValue; matched2 = CDR(matched2)) {
+        if(TAG(CDR(matched2)) == R_DotsSymbol) {
+          tail = CDDR(matched2);
+          SETCDR(matched2, CADR(matched2));
+          listAppend(matched2, tail); // Expand dots
+          break;
+    } } }
+  } else if(strcmp("include", CHAR(asChar(dots)))) {
+    error("Logic Error: unexpected `dots` argument value %s", CHAR(asChar(dots)));
+  }
+  SETCDR(match_res, matched);
 
   // - Finalize ----------------------------------------------------------------
 
-  UNPROTECT(5);
-  return eval(t, sf_target);
+  UNPROTECT(1);
+  return match_res;
 }

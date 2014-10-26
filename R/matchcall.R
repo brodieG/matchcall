@@ -1,22 +1,22 @@
-#' Retrieve All Closure Arguments
+#' Match Closure Arguments To Formals
 #'
-#' Similar to \code{`\link{match.call}`}, but includes formals that are not
-#' specified by user (e.g. default values).
+#' Similar to \code{`\link{match.call}`}, but is designed specifically to match
+#' calls from the dynamic call stack.  Which call is matched is controlled by the
+#' \code{`n`} argument, which is analgous to the \code{`n`} argument
+#' for \code{`\link{sys.parent}`}.
 #'
-#' Must be called within closure you are trying to retrieve arguments for, or
-#' optionally further down the call stack if you adjust the \code{`parent.offset`}
-#' argument accordingly.
-#'
-#' @note There is a lot of non-standard dynamic scoping going on within this function
-#' to deal with potential corner cases, so if you are using it in a particularly
-#' non-standard context it may not work as expected.  Efforts have been taken to
-#' attempt to ensure that behavior is as expected in most scenarios, but I can't
-#' fully guarantee this.
+#' You can also use \code{`match.call`} to match arbitrary calls from the
+#' call stack, but it is simpler to do so using \code{`match_call`}.  See examples
+#' for illustration of differences between \code{`\link{match.call}`} and
+#' \code{`match_call`}.  Additionally, there are some corner cases where
+#' \code{`\link{match.call}`} does not behave as expected (see vignette).
 #'
 #' @export
-#' @param dots "exclude": do not include dots, "include": include them, "expand":
-#'   include and expand (note last two only include dots if there are actually
-#'   args matched by dots)
+#' @param n integer(1L) how many frames to look up the call stack, analogous to
+#'   the \code{`n`} parameter for \code{`\link{sys.parent}`}.
+#' @param dots character(1L) "exclude": do not include dots, "include": include
+#'   them, "expand": include and expand (note last two only include dots if
+#'   there are actually args matched by dots)
 #' @param default.formals set to TRUE to include formals not specified in call
 #'   though under no circumstances will it return ellipses even if you do
 #'   something like \code{function(a, ...=list(1, 2, 3))} which oddly R appears
@@ -32,21 +32,48 @@
 #' @param user.formals set to FALSE if you want to exclude arguments that the
 #'   user specified; this should almost never be needed unless you specifically
 #'   want to know what arguments are using default values
-#' @param parent.offset positive integer 1 length how many parents up the chain
-#'   should the match_call() be done on
-#' @param bypass.checks logical 1 length set to TRUE to skip argument validation
-#'   which will save about 20% on execution time; you should only do this after
-#'   you have confirmed things work fine as there are no guarantees on behavior
-#'   with incorrect arguments.
 #' @return the call that invoked the function match_call() is invoked from (as a
 #'   list if `eval.formals`==TRUE)
+#' @useDynLib matchcall, .registration=TRUE, .fixes="MC_"
 #' @examples
+#' # Compare `match.call` and `match_call`
+#' fun1 <- function(a, b) {
+#'   cat("**Matching Parent Call**\n")
+#'   print(match.call())
+#'   print(match_call())
+#'
+#'   cat("\n**Matching Grand-Parent Call**\n")
+#'   print(match.call(fun2, sys.call(sys.parent())))
+#'   print(match_call(2))
+#' }
+#' fun2 <- function(c, d) fun1(a + 1, b - 1)
+#' fun2(25, pi() + 3)
+#' # Other examples
 #' fun <- function(a, b, c=TRUE, ...) {
 #'   match_call(default.formals=TRUE, dots="include")
 #' }
 #' fun(5, 6, x=list(1:10, FALSE))
 
-match_call <- function(dots="expand", default.formals=FALSE, empty.formals=FALSE,
+match_call <- function(n=1L, dots="expand", default.formals=FALSE, empty.formals=FALSE,
+  eval.formals=FALSE, user.formals=TRUE)
+  .Call(
+    MC_match_call,
+    dots, default.formals, empty.formals, eval.formals, user.formals,
+    n, sys.frames(), sys.calls()  # note slightly faster than `sys.frame` and `sys.call`, for some reason
+  )
+#' Help Test Fun
+#'
+#' @export
+
+mc_test <- function(x) {
+  .Call(MC_test, x)
+}
+
+#' Kept here for easy reference
+#'
+#' @keywords internal
+
+match_call_old <- function(dots="expand", default.formals=FALSE, empty.formals=FALSE,
   eval.formals=FALSE, user.formals=TRUE, parent.offset=0L, bypass.checks=FALSE) {
   if(!is_int(parent.offset)) stop("Argument `parent.offset` must be a 1 length integer vector.")
 

@@ -63,3 +63,19 @@ unitizer_sect("Examples that break match.call", {
   fun3(3, "test", 59, x=45, zest="lemon", 58)
   fun3(3, "test", 59, x=45, zest="lemon", (58), (60))
 })
+unitizer_sect(
+  "Doc Example",
+  compare=unitizerItemTestsFuns(output=identical),  # Need to check output here
+{
+  fun1 <- function(a, b) {
+    cat("**Matching Parent Call**\n")
+    print(match.call())
+    print(match_call())
+
+    cat("\n**Matching Grand-Parent Call**\n")
+    print(match.call(fun2, sys.call(sys.parent())))
+    print(match_call(2))
+  }
+  fun2 <- function(c, d) fun1(a + 1, b - 1)
+  fun2(25, pi() + 3)
+})

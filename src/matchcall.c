@@ -84,7 +84,7 @@ SEXP MC_match_call (
   SEXP user_formals, SEXP parent_offset, SEXP sys_frames, SEXP sys_calls,
   SEXP sys_pars
 ) {
-  R_xlen_t par_off, frame_len = 0, frame_stop, call_stop;  // Being a bit sloppy about what is really an int vs R_xlen_t; likely need to clean up at some point
+  R_xlen_t par_off, frame_len = 0, frame_stop, call_stop, par_off_count;  // Being a bit sloppy about what is really an int vs R_xlen_t; likely need to clean up at some point
   SEXPTYPE sys_frames_type, sys_calls_type, type_tmp;
   SEXP sys_frame, sys_call, sf_target, sc_target, fun, formals, actuals,
     t2, t1;
@@ -158,6 +158,7 @@ SEXP MC_match_call (
   // Need to count frames b/c we need to calculate the offset from the end of
   // the frame list
 
+
   for(
     sys_frame = sys_frames, sys_call = sys_calls;
     sys_call != R_NilValue && sys_frame != R_NilValue;
@@ -191,8 +192,17 @@ SEXP MC_match_call (
       frame_len, XLENGTH(sys_pars)
     );
   }
-  call_stop = INTEGER(sys_pars)[(frame_len - 1) - par_off];      // Find parent call using `sys.parents()` data
+
+  call_stop = INTEGER(sys_pars)[frame_len - 1];  // First parent
+
+  for(par_off_count = par_off; par_off_count > 1; par_off_count--) {
+    call_stop = call_stop > 1 ? INTEGER(sys_pars)[call_stop - 1] : 0;      // Find parent call using `sys.parents()` data
+  }
   frame_stop = call_stop ? INTEGER(sys_pars)[call_stop - 1] : 0; // Now the frame to evaluate the parent call in
+  // PrintValue(sys_calls);
+  // PrintValue(sys_pars);
+  // Rprintf("fstop: %d cstop: %d paroff: %d framelen: %d", frame_stop, call_stop,
+  //   par_off, frame_len);
 
   // Now that we know what frame we want, get it
 

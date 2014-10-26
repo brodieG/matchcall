@@ -19,13 +19,13 @@ Unit: microseconds
  fun2(1, 2, 3) 2.204 2.475 2.6925 2.969  11.608   100
 ```
 
-With "normal" match.call (as of commit b8e48dd), we get:
+With "normal" match_call (as of commit 71355fb), we get:
 
 ```
 Unit: microseconds
-          expr   min     lq median     uq    max neval
-  fun(1, 2, 3) 4.447 4.9665 5.2555 5.7095 23.915   100
- fun2(1, 2, 3) 2.331 2.5860 2.8365 3.0685 42.980   100
+          expr   min     lq median     uq     max neval
+  fun(1, 2, 3) 4.521 5.2715 5.6135 6.0715 131.933   100
+ fun2(1, 2, 3) 2.315 2.6755 3.0280 3.3140  21.376   100
 ```
 
 There is probably room for improvement, but given that we `eval` `match.call` from within `match_call`, it's hard to imagine it will get that much better.

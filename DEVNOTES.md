@@ -41,4 +41,4 @@ Unit: microseconds
  fun(1, 2, 3) 4.243 4.7125  4.994 5.412 41.397  2000
 ```
 
-So maybe we can save half a microsecond someplace.
+So maybe we can save half a microsecond someplace, or if really necessary code the `match.call` logic ourselves, though that will be a PITA.

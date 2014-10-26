@@ -8,14 +8,15 @@
 |                                                                              |
 \* -------------------------------------------------------------------------- */
 
-SEXP MC_match_call (  SEXP dots, SEXP default_formals, SEXP empty_formals, SEXP eval_formals,
+SEXP MC_match_call (
+  SEXP dots, SEXP default_formals, SEXP empty_formals, SEXP eval_formals,
   SEXP user_formals, SEXP parent_offset, SEXP sys_frames,
-  SEXP sys_calls);
+  SEXP sys_calls, SEXP sys_pars);
 SEXP MC_test (SEXP x);
 
 static const
 R_CallMethodDef callMethods[] = {
-  {"match_call", (DL_FUNC) &MC_match_call, 8},
+  {"match_call", (DL_FUNC) &MC_match_call, 9},
   {"test", (DL_FUNC) &MC_test, 1},
   {NULL, NULL, 0}
 };
@@ -80,9 +81,10 @@ SEXP getDots(SEXP rho)
 
 SEXP MC_match_call (
   SEXP dots, SEXP default_formals, SEXP empty_formals, SEXP eval_formals,
-  SEXP user_formals, SEXP parent_offset, SEXP sys_frames, SEXP sys_calls
+  SEXP user_formals, SEXP parent_offset, SEXP sys_frames, SEXP sys_calls,
+  SEXP sys_pars
 ) {
-  R_xlen_t par_off, frame_len = 0, frame_stop;
+  R_xlen_t par_off, frame_len = 0, frame_stop, call_stop;  // Being a bit sloppy about what is really an int vs R_xlen_t; likely need to clean up at some point
   SEXPTYPE sys_frames_type, sys_calls_type, type_tmp;
   SEXP sys_frame, sys_call, sf_target, sc_target, fun, formals, actuals,
     t2, t1;
@@ -145,6 +147,11 @@ SEXP MC_match_call (
       "Logic Error: unexpected system calls type %s, should be a list of dotted pairs ; contact maintainer.",
       type2char(sys_calls_type)
     );
+  if(TYPEOF(sys_pars) != INTSXP)
+    error(
+      "Logic Error: unexpected system calls type %s, should be a list of an integer vector ; contact maintainer.",
+      type2char(TYPEOF(sys_pars))
+    );
 
   // - Retrieve Call & Frame ---------------------------------------------------
 
@@ -178,26 +185,35 @@ SEXP MC_match_call (
       "Argument `n` (%d) is greater than stack depth (%d)",
       par_off, frame_len - 1
     );
-
-  frame_stop = frame_len - par_off;
+  if(frame_len != XLENGTH(sys_pars)) {
+    error(
+      "Logic Error: Mismatch between number of frames (%d) and length of `sys.parents()` (%d); contact maintainer",
+      frame_len, XLENGTH(sys_pars)
+    );
+  }
+  call_stop = INTEGER(sys_pars)[(frame_len - 1) - par_off];      // Find parent call using `sys.parents()` data
+  frame_stop = call_stop ? INTEGER(sys_pars)[call_stop - 1] : 0; // Now the frame to evaluate the parent call in
 
   // Now that we know what frame we want, get it
 
-  sf_target = R_NilValue;
+  if(!frame_stop) {
+    sf_target = R_GlobalEnv;                 // Ran out of frames, so look in global env
+  } else if(frame_stop > 0) {
+    for(
+      sys_frame = sys_frames, frame_len = 1;
+      sys_frame != R_NilValue; sys_frame = CDR(sys_frame), frame_len++
+    )
+      if(frame_len == frame_stop) sf_target = CAR(sys_frame);
+  } else {
+    error("Logic Error: attempting to match to negative frame; contact maintainer.");
+  }
+  // Get call as well
 
   for(
-    sys_frame = sys_frames, sys_call = sys_calls, frame_len = 0;
-    sys_call != R_NilValue && sys_frame != R_NilValue;
-    sys_frame = CDR(sys_frame), sys_call = CDR(sys_call)
-  ) {
-    frame_len++;
-    if(frame_len == frame_stop)
-      sc_target = CAR(sys_call);
-    else if(frame_len + 1 == frame_stop)   // Frame we want is one before the call
-      sf_target = CAR(sys_frame);
-  }
-  if(sf_target == R_NilValue)    // Ran out of frames, so look in global env
-    sf_target = R_GlobalEnv;
+    sys_call = sys_calls, frame_len = 1; sys_call != R_NilValue;
+    sys_call = CDR(sys_call), frame_len++
+  )
+    if(frame_len == call_stop) sc_target = CAR(sys_call);
 
   // - Dots --------------------------------------------------------------------
 

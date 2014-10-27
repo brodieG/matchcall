@@ -86,8 +86,7 @@ SEXP MC_match_call (
 ) {
   R_xlen_t par_off, frame_len = 0, frame_stop, call_stop, par_off_count;  // Being a bit sloppy about what is really an int vs R_xlen_t; likely need to clean up at some point
   SEXPTYPE sys_frames_type, sys_calls_type, type_tmp;
-  SEXP sys_frame, sys_call, sf_target, sc_target, fun, formals, actuals,
-    t2, t1;
+  SEXP sys_frame, sys_call, sf_target, sc_target, fun, actuals, t2, t1;
   const char * dots_char;
 
   // - Validate ----------------------------------------------------------------
@@ -237,8 +236,6 @@ SEXP MC_match_call (
   if (TYPEOF(fun) != CLOSXP)
       error("Unable to find a closure from within which `match_call` was called");
 
-  formals = FORMALS(fun);
-
   PROTECT(actuals = CDR(sc_target));
 
     /* If there is a ... symbol then expand it out in the sysp env
@@ -311,10 +308,45 @@ SEXP MC_match_call (
 
   // - Manipulate Result -------------------------------------------------------
 
-  // Expand or drop dots as appropriate
-
   SEXP matched, matched2;
   matched = CDR(match_res);
+
+  // Add default formals if needed
+
+  if(LOGICAL(default_formals)[0]) {
+    SEXP formals, form_cpy, matched_tail, matched_prev;
+    int one_match = 0; // Indicates we've had one TAG match between formals and matched args, which changes our appending strategy
+    formals = FORMALS(fun);
+
+    for(
+      matched2 = matched; formals != R_NilValue;
+      matched_prev = matched2, matched2 = CDR(matched2), formals=CDR(formals)
+    ) {
+      if(TAG(matched2) != TAG(formals)) {  // Should only happen if we have a default value not specified in call
+        if(CAR(formals) == R_MissingArg)
+          error(
+            "Logic Error: expected default val for arg %s but got missing value; contact maintainer.",
+            CHAR(asChar(TAG(formals)))
+          );
+        if(one_match) {  // Already have one matched
+          form_cpy = PROTECT(duplicate(formals));
+          matched_tail = matched2;
+          matched2 = matched_prev;
+          SETCDR(matched2, form_cpy);
+          UNPROTECT(1);
+          matched2 = CDR(matched2);
+          SETCDR(matched2, matched_tail);
+        } else {         // Don't have any matched yet, so keep adding default formals at front
+          form_cpy = PROTECT(duplicate(formals));
+          matched_tail = matched2;
+          matched2 = form_cpy;
+          UNPROTECT(1);
+          SETCDR(matched2, matched_tail);
+        }
+      } else {
+        one_match = 1;
+  } } }
+  // Expand or drop dots as appropriate
 
   if(!strcmp("exclude", CHAR(asChar(dots)))) {  // Has to be expand or exclude
     if(TAG(matched) == R_DotsSymbol) {
@@ -323,7 +355,7 @@ SEXP MC_match_call (
       for(matched2 = matched; matched2 != R_NilValue; matched2 = CDR(matched2)) {
         if(TAG(CDR(matched2)) == R_DotsSymbol) {
           tail = CDDR(matched2);
-          SETCDR(matched2, tail);              // Drop dots
+          SETCDR(matched2, tail);               // Drop dots
           break;
     } } }
   } else if (!strcmp("expand", CHAR(asChar(dots)))) {

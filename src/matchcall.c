@@ -325,8 +325,8 @@ SEXP MC_match_call (
       if(TAG(matched2) != TAG(formals)) {  // Should only happen if we have a default value not specified in call
         if(CAR(formals) == R_MissingArg)
           error(
-            "Logic Error: expected default val for arg %s but got missing value; contact maintainer.",
-            CHAR(asChar(TAG(formals)))
+            "Logic Error: expected default val for arg '%s' but got missing value; contact maintainer.",
+            CHAR(PRINTNAME(TAG(formals)))
           );
         if(one_match) {  // Already have one matched
           form_cpy = PROTECT(duplicate(formals));

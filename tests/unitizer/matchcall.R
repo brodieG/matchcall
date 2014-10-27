@@ -90,7 +90,7 @@ unitizer_sect(
   fun1(1, 2, 3, 4)
   fun1(z=1, w=2, 3, 4)
 
-  fun2 <- function(x, ..., y, z=TRUE, w=letters[1:3]) match_call(default.formals=TRUE)
+  fun2 <- function(x, ..., y, z=TRUE, w=letters[1:3]) match_call(default.formals=TRUE, dots="include")
 
   fun2(1, 2, 3)
   fun2(z=3, 1, 2)

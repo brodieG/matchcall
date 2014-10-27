@@ -317,17 +317,21 @@ SEXP MC_match_call (
     SEXP formals, form_cpy, matched_tail, matched_prev;
     int one_match = 0; // Indicates we've had one TAG match between formals and matched args, which changes our appending strategy
     formals = FORMALS(fun);
+    matched_prev = matched;
 
     for(
       matched2 = matched; formals != R_NilValue;
-      matched_prev = matched2, matched2 = CDR(matched2), formals=CDR(formals)
+      matched2 != R_NilValue ? matched_prev = matched2 : 0,
+      matched2 = CDR(matched2), formals=CDR(formals)
     ) {
+      // PrintValue(formals);
+      // Rprintf("---------------------------------------------\n");
+      // PrintValue(matched2);
+      // Rprintf("=============================================\n");
+
       if(TAG(matched2) != TAG(formals)) {  // Should only happen if we have a default value not specified in call
         if(CAR(formals) == R_MissingArg)
-          error(
-            "Logic Error: expected default val for arg '%s' but got missing value; contact maintainer.",
-            CHAR(PRINTNAME(TAG(formals)))
-          );
+          continue;
         if(one_match) {  // Already have one matched
           form_cpy = PROTECT(duplicate(formals));
           matched_tail = matched2;

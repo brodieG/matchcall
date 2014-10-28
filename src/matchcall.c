@@ -39,7 +39,16 @@ void R_init_matchcall(DllInfo *info)
 \* -------------------------------------------------------------------------- */
 
 SEXP MC_test(SEXP x) {
-    return ScalarLogical(asReal(x) > 1);
+  SEXP s, t;
+  PROTECT(s = allocList(2));
+  SETCAR(s, ScalarLogical(1));
+  SETCADR(s, ScalarLogical(0));
+
+  t = CAR(s);
+  u = CADR(s);
+
+  UNPROTECT(1);
+  return ScalarLogical(asReal(x) > 1);
 }
 // Based on subDots in src/main/unique.c
 
@@ -261,8 +270,9 @@ SEXP MC_match_call (
         if( CADR(t1) == R_DotsSymbol ) {
           tail = CDDR(t1);
           SETCDR(t1, t2);
-          UNPROTECT(1);
-          listAppend(actuals, tail);
+          UNPROTECT(2);
+          actuals = listAppend(actuals, tail);
+          PROTECT(actuals);
           break;
         }
       }
@@ -286,27 +296,27 @@ SEXP MC_match_call (
   // - Invoke `match.call` -----------------------------------------------------
 
   // Manufacture call to `match.call` now that we have found the dots (this is
-  // taken from Writing R Extensions)
+  // taken from Writing R Extensions).  Note, we're erring on the side of
+  // overPROTECTing here.
 
   SEXP t, u, v;  // Need to create a quoted version of the call we captured
   u = v = PROTECT(allocList(2));
   SET_TYPEOF(u, LANGSXP);
-  SETCAR(u, install("quote"));
-  v = CDR(u);
+  SETCAR(u, PROTECT(install("quote")));
+  v = PROTECT(CDR(u));
   SETCAR(v, sc_target);
 
   t = PROTECT(allocList(4));
-  SETCAR(t, install("match.call"));
+  SETCAR(t, PROTECT(install("match.call")));
   SETCADR(t, fun);
   SETCADDR(t, u);
   SETCADDDR(t, PROTECT(ScalarLogical(0)));  // Do not expand dots ever, done below
   SET_TYPEOF(t, LANGSXP);
 
-  PrintValue(t);
+  // PrintValue(t);
 
   SEXP match_res;
 
-  UNPROTECT(6);
   match_res = PROTECT(eval(t, sf_target));
 
   // - Manipulate Result -------------------------------------------------------
@@ -395,6 +405,6 @@ SEXP MC_match_call (
 
   // - Finalize ----------------------------------------------------------------
 
-  UNPROTECT(1);
+  UNPROTECT(10);
   return match_res;
 }

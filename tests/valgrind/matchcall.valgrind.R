@@ -1,14 +1,14 @@
 library(matchcall)
 
-unitizer_sect("Input Errors", {
-  match_call(dots=1)
-  match_call(dots="explode")
-  match_call(dots=NA_character_)
-  match_call(0)
-  match_call(default.formals=c(TRUE, FALSE))
-  match_call(empty.formals=NA)
-})
-unitizer_sect("Simple Tests", {
+  gctorture(TRUE)
+
+  # try(match_call(dots=1))
+  # try(match_call(dots="explode"))
+  # try(match_call(dots=NA_character_))
+  # try(match_call(0))
+  # try(match_call(default.formals=c(TRUE, FALSE)))
+  # try(match_call(empty.formals=NA))
+
   fun <- function(x, y, z=TRUE) match_call()
 
   fun(1, 2, 3)
@@ -32,8 +32,6 @@ unitizer_sect("Simple Tests", {
   fun4(1, 2, 3, 4)
   fun4(1, 2, x=3, w=4)
   fun4(x=3, 1, 2, list(4))
-})
-unitizer_sect("Examples that break match.call", {
   fun0 <- function(...) {
     fun_gpar <- function(b, ...) {
       fun_par <- function(a)
@@ -62,11 +60,7 @@ unitizer_sect("Examples that break match.call", {
   }
   fun3(3, "test", 59, x=45, zest="lemon", 58)
   fun3(3, "test", 59, x=45, zest="lemon", (58), (60))
-})
-unitizer_sect(
-  "Doc Example",
-  compare=unitizerItemTestsFuns(output=identical),  # Need to check output here
-{
+
   fun1 <- function(a, b) {
     cat("**Matching Parent Call**\n")
     print(match.call())
@@ -78,15 +72,12 @@ unitizer_sect(
   }
   fun2 <- function(c, d) fun1(a + 1, b - 1)
   fun2(25, pi() + 3)
-})
-unitizer_sect(
-  "Default Formals", {
 
   fun1 <- function(x, y, z=TRUE, w=letters[1:3]) match_call(default.formals=TRUE)
 
   fun1(1, 2, 3)
   fun1(z=3, 1, 2)
-  fun1(q=5, 6, "hello")
+  try(fun1(q=5, 6, "hello"))
   fun1(1, 2, 3, 4)
   fun1(z=1, w=2, 3, 4)
 
@@ -97,5 +88,4 @@ unitizer_sect(
   fun2(q=5, 6, "hello")
   fun2(1, 2, 3, 4)
   fun2(z=1, w=2, 3, 4)
-
-})
+  gctorture(FALSE)

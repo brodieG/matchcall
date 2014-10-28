@@ -39,7 +39,16 @@ void R_init_matchcall(DllInfo *info)
 \* -------------------------------------------------------------------------- */
 
 SEXP MC_test(SEXP x) {
-    return ScalarLogical(asReal(x) > 1);
+  SEXP s, t;
+  PROTECT(s = allocList(2));
+  SETCAR(s, ScalarLogical(1));
+  SETCADR(s, ScalarLogical(0));
+
+  t = CAR(s);
+  u = CADR(s);
+
+  UNPROTECT(1);
+  return ScalarLogical(asReal(x) > 1);
 }
 // Based on subDots in src/main/unique.c
 
@@ -86,8 +95,7 @@ SEXP MC_match_call (
 ) {
   R_xlen_t par_off, frame_len = 0, frame_stop, call_stop, par_off_count;  // Being a bit sloppy about what is really an int vs R_xlen_t; likely need to clean up at some point
   SEXPTYPE sys_frames_type, sys_calls_type, type_tmp;
-  SEXP sys_frame, sys_call, sf_target, sc_target, fun, formals, actuals,
-    t2, t1;
+  SEXP sys_frame, sys_call, sf_target, sc_target, fun, actuals, t2, t1;
   const char * dots_char;
 
   // - Validate ----------------------------------------------------------------
@@ -223,7 +231,7 @@ SEXP MC_match_call (
     sys_call = sys_calls, frame_len = 1; sys_call != R_NilValue;
     sys_call = CDR(sys_call), frame_len++
   )
-    if(frame_len == call_stop) sc_target = CAR(sys_call);
+    if(frame_len == call_stop) sc_target = PROTECT(CAR(sys_call));
 
   // - Dots --------------------------------------------------------------------
 
@@ -237,8 +245,6 @@ SEXP MC_match_call (
   if (TYPEOF(fun) != CLOSXP)
       error("Unable to find a closure from within which `match_call` was called");
 
-  formals = FORMALS(fun);
-
   PROTECT(actuals = CDR(sc_target));
 
     /* If there is a ... symbol then expand it out in the sysp env
@@ -248,7 +254,7 @@ SEXP MC_match_call (
   t2 = R_MissingArg;
   for (t1 = actuals ; t1 != R_NilValue ; t1 = CDR(t1) ) {
     if (CAR(t1) == R_DotsSymbol) {
-      t2 = getDots(sf_target);
+      t2 = PROTECT(getDots(sf_target));
       break;
     }
   }
@@ -256,16 +262,17 @@ SEXP MC_match_call (
 
   if (t2 != R_MissingArg && strcmp(CHAR(asChar(dots)), "exclude")) {  /* so we did something above */
     if(CAR(actuals) == R_DotsSymbol ) {
-      UNPROTECT(1);
+      UNPROTECT(2);
       actuals = listAppend(t2, CDR(actuals));
       PROTECT(actuals);
-    }
-    else {
+    } else {
       for(t1=actuals; t1!=R_NilValue; t1=CDR(t1)) {
         if( CADR(t1) == R_DotsSymbol ) {
           tail = CDDR(t1);
           SETCDR(t1, t2);
-          listAppend(actuals, tail);
+          UNPROTECT(2);
+          actuals = listAppend(actuals, tail);
+          PROTECT(actuals);
           break;
         }
       }
@@ -277,7 +284,7 @@ SEXP MC_match_call (
         PROTECT(actuals);
     } else {
       for(t1=actuals; t1!=R_NilValue; t1=CDR(t1)) {
-        if( CADR(t1) == R_DotsSymbol ) {
+        if(CADR(t1) == R_DotsSymbol) {
           tail = CDDR(t1);
           SETCDR(t1, tail);
           break;
@@ -289,32 +296,84 @@ SEXP MC_match_call (
   // - Invoke `match.call` -----------------------------------------------------
 
   // Manufacture call to `match.call` now that we have found the dots (this is
-  // taken from Writing R Extensions)
+  // taken from Writing R Extensions).  Note, we're erring on the side of
+  // overPROTECTing here.
 
-  SEXP t, u;  // Need to create a quoted version of the call we captured
-  u = PROTECT(allocList(2));
+  SEXP t, u, v;  // Need to create a quoted version of the call we captured
+  u = v = PROTECT(allocList(2));
   SET_TYPEOF(u, LANGSXP);
-  SETCAR(u, install("quote"));
-  SETCADR(u, sc_target);
+  SETCAR(u, PROTECT(install("quote")));
+  v = PROTECT(CDR(u));
+  SETCAR(v, sc_target);
 
   t = PROTECT(allocList(4));
-  SETCAR(t, install("match.call"));
+  SETCAR(t, PROTECT(install("match.call")));
   SETCADR(t, fun);
   SETCADDR(t, u);
   SETCADDDR(t, PROTECT(ScalarLogical(0)));  // Do not expand dots ever, done below
   SET_TYPEOF(t, LANGSXP);
 
+  // PrintValue(t);
+
   SEXP match_res;
 
-  UNPROTECT(5);
   match_res = PROTECT(eval(t, sf_target));
 
   // - Manipulate Result -------------------------------------------------------
 
-  // Expand or drop dots as appropriate
-
   SEXP matched, matched2;
   matched = CDR(match_res);
+
+  // Add default formals if needed
+
+  if(LOGICAL(default_formals)[0]) {
+    SEXP formals, form_cpy, matched_tail, matched_prev;
+    int one_match = 0; // Indicates we've had one TAG match between formals and matched args, which changes our appending strategy
+    formals = FORMALS(fun);
+    matched_prev = matched;
+
+    /*
+    Logic here is to compare matched arguments and formals pair-wise. In theory
+    these are in the same order with potentially default arguments missing, so
+    we just loop and sub in defaults when they are missing from matched
+    arguments.  Some complexities arise from illegally missing formals
+    */
+
+    for(
+      matched2 = matched; formals != R_NilValue;
+      formals=CDR(formals)
+    ) {
+      if(TAG(matched2) != TAG(formals)) {
+        if(CAR(formals) == R_MissingArg) {  // This is an illegally missing formal
+          continue;
+        }
+        /*
+        strategy is to make a copy of the formals, append, advance one, and
+        then re-attach the rest of the match arguments
+        */
+        if(one_match) {  // Already have one matched
+          form_cpy = PROTECT(duplicate(formals));
+          matched_tail = matched2;
+          matched2 = matched_prev;
+          SETCDR(matched2, form_cpy);
+          UNPROTECT(1);
+          matched2 = CDR(matched2);
+          SETCDR(matched2, matched_tail);
+        } else {         // Don't have any matched yet, so keep adding default formals at front
+          form_cpy = PROTECT(duplicate(formals));
+          matched_tail = matched2;
+          matched2 = form_cpy;
+          UNPROTECT(1);
+          SETCDR(matched2, matched_tail);
+        }
+      } else {
+        one_match = 1;
+      }
+      if(matched2 != R_NilValue)
+        matched_prev = matched2;
+      matched2 = CDR(matched2);  // Need to advance here b/c if we continue, we do not want to advance matched2
+  } }
+  // Expand or drop dots as appropriate
 
   if(!strcmp("exclude", CHAR(asChar(dots)))) {  // Has to be expand or exclude
     if(TAG(matched) == R_DotsSymbol) {
@@ -323,7 +382,7 @@ SEXP MC_match_call (
       for(matched2 = matched; matched2 != R_NilValue; matched2 = CDR(matched2)) {
         if(TAG(CDR(matched2)) == R_DotsSymbol) {
           tail = CDDR(matched2);
-          SETCDR(matched2, tail);              // Drop dots
+          SETCDR(matched2, tail);               // Drop dots
           break;
     } } }
   } else if (!strcmp("expand", CHAR(asChar(dots)))) {
@@ -346,6 +405,6 @@ SEXP MC_match_call (
 
   // - Finalize ----------------------------------------------------------------
 
-  UNPROTECT(1);
+  UNPROTECT(10);
   return match_res;
 }

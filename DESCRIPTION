@@ -1,9 +1,9 @@
 Package: matchcall
 Title: Augmented Version of base::match.call
 Description: Provides functionality similar to `base::match.call`, but allows
-    easy matching of calls earlier in the dynamic stack (i.e. `sys.calls()`),
+    easy matching of calls in the dynamic stack (i.e. `sys.calls()`),
     and addresses some corner case "bugs" in `base::match.call`.
-Version: 0.1.1
+Version: 0.1.2
 Author: Brodie Gaslam
 Maintainer: Brodie Gaslam <brodie.gaslam@yahoo.com>
 Depends:

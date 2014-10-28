@@ -222,7 +222,7 @@ SEXP MC_match_call (
     sys_call = sys_calls, frame_len = 1; sys_call != R_NilValue;
     sys_call = CDR(sys_call), frame_len++
   )
-    if(frame_len == call_stop) sc_target = CAR(sys_call);
+    if(frame_len == call_stop) sc_target = PROTECT(CAR(sys_call));
 
   // - Dots --------------------------------------------------------------------
 
@@ -245,7 +245,7 @@ SEXP MC_match_call (
   t2 = R_MissingArg;
   for (t1 = actuals ; t1 != R_NilValue ; t1 = CDR(t1) ) {
     if (CAR(t1) == R_DotsSymbol) {
-      t2 = getDots(sf_target);
+      t2 = PROTECT(getDots(sf_target));
       break;
     }
   }
@@ -253,15 +253,15 @@ SEXP MC_match_call (
 
   if (t2 != R_MissingArg && strcmp(CHAR(asChar(dots)), "exclude")) {  /* so we did something above */
     if(CAR(actuals) == R_DotsSymbol ) {
-      UNPROTECT(1);
+      UNPROTECT(2);
       actuals = listAppend(t2, CDR(actuals));
       PROTECT(actuals);
-    }
-    else {
+    } else {
       for(t1=actuals; t1!=R_NilValue; t1=CDR(t1)) {
         if( CADR(t1) == R_DotsSymbol ) {
           tail = CDDR(t1);
           SETCDR(t1, t2);
+          UNPROTECT(1);
           listAppend(actuals, tail);
           break;
         }
@@ -274,7 +274,7 @@ SEXP MC_match_call (
         PROTECT(actuals);
     } else {
       for(t1=actuals; t1!=R_NilValue; t1=CDR(t1)) {
-        if( CADR(t1) == R_DotsSymbol ) {
+        if(CADR(t1) == R_DotsSymbol) {
           tail = CDDR(t1);
           SETCDR(t1, tail);
           break;
@@ -288,11 +288,12 @@ SEXP MC_match_call (
   // Manufacture call to `match.call` now that we have found the dots (this is
   // taken from Writing R Extensions)
 
-  SEXP t, u;  // Need to create a quoted version of the call we captured
-  u = PROTECT(allocList(2));
+  SEXP t, u, v;  // Need to create a quoted version of the call we captured
+  u = v = PROTECT(allocList(2));
   SET_TYPEOF(u, LANGSXP);
   SETCAR(u, install("quote"));
-  SETCADR(u, sc_target);
+  v = CDR(u);
+  SETCAR(v, sc_target);
 
   t = PROTECT(allocList(4));
   SETCAR(t, install("match.call"));
@@ -301,9 +302,11 @@ SEXP MC_match_call (
   SETCADDDR(t, PROTECT(ScalarLogical(0)));  // Do not expand dots ever, done below
   SET_TYPEOF(t, LANGSXP);
 
+  PrintValue(t);
+
   SEXP match_res;
 
-  UNPROTECT(5);
+  UNPROTECT(6);
   match_res = PROTECT(eval(t, sf_target));
 
   // - Manipulate Result -------------------------------------------------------

@@ -319,19 +319,25 @@ SEXP MC_match_call (
     formals = FORMALS(fun);
     matched_prev = matched;
 
+    /*
+    Logic here is to compare matched arguments and formals pair-wise. In theory
+    these are in the same order with potentially default arguments missing, so
+    we just loop and sub in defaults when they are missing from matched
+    arguments.  Some complexities arise from illegally missing formals
+    */
+
     for(
       matched2 = matched; formals != R_NilValue;
-      matched2 != R_NilValue ? matched_prev = matched2 : 0,
-      matched2 = CDR(matched2), formals=CDR(formals)
+      formals=CDR(formals)
     ) {
-      // PrintValue(formals);
-      // Rprintf("---------------------------------------------\n");
-      // PrintValue(matched2);
-      // Rprintf("=============================================\n");
-
-      if(TAG(matched2) != TAG(formals)) {  // Should only happen if we have a default value not specified in call
-        if(CAR(formals) == R_MissingArg)
+      if(TAG(matched2) != TAG(formals)) {
+        if(CAR(formals) == R_MissingArg) {  // This is an illegally missing formal
           continue;
+        }
+        /*
+        strategy is to make a copy of the formals, append, advance one, and
+        then re-attach the rest of the match arguments
+        */
         if(one_match) {  // Already have one matched
           form_cpy = PROTECT(duplicate(formals));
           matched_tail = matched2;
@@ -349,7 +355,11 @@ SEXP MC_match_call (
         }
       } else {
         one_match = 1;
-  } } }
+      }
+      if(matched2 != R_NilValue)
+        matched_prev = matched2;
+      matched2 = CDR(matched2);  // Need to advance here b/c if we continue, we do not want to advance matched2
+  } }
   // Expand or drop dots as appropriate
 
   if(!strcmp("exclude", CHAR(asChar(dots)))) {  // Has to be expand or exclude

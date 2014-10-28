@@ -3,7 +3,7 @@ matchcall
 
 **Pre-Release**
 
-Lots of outstanding issues.  Only `n` and `dots` arguments do anything right now.
+Lots of outstanding issues.  Only `n`, `dots`, and `default.args` arguments do anything right now.
 
 ## Overview
 

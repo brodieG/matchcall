@@ -78,6 +78,10 @@ unitizer_sect(
   }
   fun2 <- function(c, d) fun1(a + 1, b - 1)
   fun2(25, pi() + 3)
+
+  fun <- function(a, b, c=TRUE, ...)
+    match_call(default.formals=TRUE, dots="include")
+  fun(5, 6, x=list(1:10, FALSE))
 })
 unitizer_sect(
   "Default Formals", {
@@ -99,3 +103,30 @@ unitizer_sect(
   fun2(z=1, w=2, 3, 4)
 
 })
+unitizer_sect(
+  "Empty Formals", {
+
+  fun1 <- function(x, y, z=TRUE, w=letters[1:3]) match_call(empty.formals=TRUE)
+
+  fun1()
+
+  fun2 <- function(x, y, ..., z, w=letters[1:3])
+    match_call(default.formals=TRUE, dots="include", empty.formals=TRUE)
+
+  fun2()
+  fun2(z=3)
+  fun2(y=5)
+  fun2(1, 2, 3, 4)
+
+  fun3 <- function(x, y, ..., z, w=letters[1:3])
+    match_call(empty.formals=TRUE, dots="exclude")
+
+  fun3()
+
+  fun4 <- function(x, y, ..., z, w=letters[1:3])
+    match_call(empty.formals=TRUE, dots="expand")
+
+  # fun4()   # this is crashing R right now...
+
+})
+

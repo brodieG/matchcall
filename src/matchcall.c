@@ -39,7 +39,7 @@ void R_init_matchcall(DllInfo *info)
 \* -------------------------------------------------------------------------- */
 
 SEXP MC_test(SEXP x) {
-  SEXP s, t;
+  SEXP s, t, u;
   PROTECT(s = allocList(2));
   SETCAR(s, ScalarLogical(1));
   SETCADR(s, ScalarLogical(0));
@@ -326,7 +326,7 @@ SEXP MC_match_call (
 
   // Add default formals if needed
 
-  if(LOGICAL(default_formals)[0]) {
+  if(LOGICAL(default_formals)[0] || asLogical(empty_formals)) {
     SEXP formals, form_cpy, matched_tail, matched_prev;
     int one_match = 0; // Indicates we've had one TAG match between formals and matched args, which changes our appending strategy
     formals = FORMALS(fun);
@@ -336,7 +336,8 @@ SEXP MC_match_call (
     Logic here is to compare matched arguments and formals pair-wise. In theory
     these are in the same order with potentially default arguments missing, so
     we just loop and sub in defaults when they are missing from matched
-    arguments.  Some complexities arise from illegally missing formals
+    arguments.  Some complexities arise from illegally missing formals, but
+    basically they can just be treated the same way
     */
 
     for(
@@ -344,27 +345,35 @@ SEXP MC_match_call (
       formals=CDR(formals)
     ) {
       if(TAG(matched2) != TAG(formals)) {
+        int missing=0;
+
         if(CAR(formals) == R_MissingArg) {  // This is an illegally missing formal
-          continue;
-        }
+          missing=1;
+          if(!asLogical(empty_formals)) {
+            continue;
+        } }
         /*
         strategy is to make a copy of the formals, append, advance one, and
         then re-attach the rest of the match arguments
         */
-        if(one_match) {  // Already have one matched
-          form_cpy = PROTECT(duplicate(formals));
-          matched_tail = matched2;
-          matched2 = matched_prev;
-          SETCDR(matched2, form_cpy);
-          UNPROTECT(1);
-          matched2 = CDR(matched2);
-          SETCDR(matched2, matched_tail);
-        } else {         // Don't have any matched yet, so keep adding default formals at front
-          form_cpy = PROTECT(duplicate(formals));
-          matched_tail = matched2;
-          matched2 = form_cpy;
-          UNPROTECT(1);
-          SETCDR(matched2, matched_tail);
+        if((asLogical(empty_formals) && missing) || asLogical(default_formals)) {
+          if(one_match) {  // Already have one matched
+            form_cpy = PROTECT(duplicate(formals));
+            matched_tail = matched2;
+            matched2 = matched_prev;
+            SETCDR(matched2, form_cpy);
+            UNPROTECT(1);
+            matched2 = CDR(matched2);
+            SETCDR(matched2, matched_tail);
+          } else {         // Don't have any matched yet, so add default formals at front
+            form_cpy = PROTECT(duplicate(formals));
+            matched_tail = matched2;
+            matched2 = form_cpy;
+            SETCDR(matched2, matched_tail);
+            matched = matched_prev = matched2;
+            one_match = 1;
+            UNPROTECT(1);
+          }
         }
       } else {
         one_match = 1;

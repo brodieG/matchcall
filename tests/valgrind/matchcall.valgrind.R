@@ -88,4 +88,27 @@ library(matchcall)
   fun2(q=5, 6, "hello")
   fun2(1, 2, 3, 4)
   fun2(z=1, w=2, 3, 4)
+
+  fun1 <- function(x, y, z=TRUE, w=letters[1:3]) match_call(empty.formals=TRUE)
+
+  fun1()
+
+  fun2 <- function(x, y, ..., z, w=letters[1:3])
+    match_call(default.formals=TRUE, dots="include", empty.formals=TRUE)
+
+  fun2()
+  fun2(z=3)
+  fun2(y=5)
+  fun2(1, 2, 3, 4)
+
+  fun3 <- function(x, y, ..., z, w=letters[1:3])
+    match_call(empty.formals=TRUE, dots="exclude")
+
+  fun3()
+
+  fun4 <- function(x, y, ..., z, w=letters[1:3])
+    match_call(empty.formals=TRUE, dots="expand")
+
+  fun4()   # this is crashing R right now...
+
   gctorture(FALSE)

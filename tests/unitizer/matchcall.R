@@ -126,7 +126,7 @@ unitizer_sect(
   fun4 <- function(x, y, ..., z, w=letters[1:3])
     match_call(empty.formals=TRUE, dots="expand")
 
-  # fun4()   # this is crashing R right now...
+  fun4()   # Expand dots even if empty, should disappear
 
 })
 

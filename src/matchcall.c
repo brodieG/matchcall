@@ -322,6 +322,7 @@ SEXP MC_match_call (
   // - Manipulate Result -------------------------------------------------------
 
   SEXP matched, matched2;
+  int missing_dots=0;
   matched = CDR(match_res);
 
   // Add default formals if needed
@@ -345,10 +346,13 @@ SEXP MC_match_call (
       formals=CDR(formals)
     ) {
       if(TAG(matched2) != TAG(formals)) {
-        int missing=0;
+        int missing = 0;
 
         if(CAR(formals) == R_MissingArg) {  // This is an illegally missing formal
-          missing=1;
+          missing = 1;
+          if(TAG(formals) == R_DotsSymbol) {
+            missing_dots = 1;  // Need this for when we expand dots
+          }
           if(!asLogical(empty_formals)) {
             continue;
         } }
@@ -384,7 +388,10 @@ SEXP MC_match_call (
   } }
   // Expand or drop dots as appropriate
 
-  if(!strcmp("exclude", CHAR(asChar(dots)))) {  // Has to be expand or exclude
+  if(   // Has to be expand or exclude (include doesn't require anything done here)
+    !strcmp("exclude", CHAR(asChar(dots))) ||
+    (!strcmp("expand", CHAR(asChar(dots))) && missing_dots) // If dots are missing and attempt to expand, remove them to avoid crash (plus, this makes sense)
+  ) {
     if(TAG(matched) == R_DotsSymbol) {
       matched = CDR(matched);                   // Drop dots
     } else {

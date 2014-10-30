@@ -96,6 +96,7 @@ SEXP MC_match_call (
   SEXPTYPE sys_frames_type, sys_calls_type, type_tmp;
   SEXP sys_frame, sys_call, sf_target, sc_target, fun, actuals, t2, t1;
   const char * dots_char;
+  int def_frm, empt_frm, usr_frm, ev_frm;
 
   // - Validate ----------------------------------------------------------------
 
@@ -110,22 +111,22 @@ SEXP MC_match_call (
     error("Argument `dots` must be character(1L) in `c(\"expand\", \"exclude\", \"include\")`.");
   if(
     TYPEOF(default_formals) != LGLSXP || XLENGTH(default_formals) != 1L ||
-    asLogical(default_formals) == NA_LOGICAL
+    (def_frm = asLogical(default_formals)) == NA_LOGICAL
   )
     error("Argument `default.formals` must be logical(1L) and not NA.");
   if(
     TYPEOF(empty_formals) != LGLSXP || XLENGTH(empty_formals) != 1L ||
-    asLogical(empty_formals) == NA_LOGICAL
+    (empt_frm = asLogical(empty_formals)) == NA_LOGICAL
   )
     error("Argument `empty.formals` must be logical(1L) and not NA.");
   if(
     TYPEOF(eval_formals) != LGLSXP || XLENGTH(eval_formals) != 1L ||
-    asLogical(eval_formals) == NA_LOGICAL
+    (ev_frm = asLogical(eval_formals)) == NA_LOGICAL
   )
     error("Argument `empty.formals` must be logical(1L) and not NA.");
   if(
     TYPEOF(user_formals) != LGLSXP || XLENGTH(user_formals) != 1L ||
-    asLogical(user_formals) == NA_LOGICAL
+    (usr_frm = asLogical(user_formals)) == NA_LOGICAL
   )
     error("Argument `user.formals` must be logical(1L) and not NA.");
   if(
@@ -325,7 +326,7 @@ SEXP MC_match_call (
 
   // Add default formals if needed
 
-  if(LOGICAL(default_formals)[0] || asLogical(empty_formals)) {
+  if(def_frm || empt_frm) {
     SEXP formals, form_cpy, matched_tail, matched_prev;
     int one_match = 0; // Indicates we've had one TAG match between formals and matched args, which changes our appending strategy
     formals = FORMALS(fun);
@@ -351,14 +352,14 @@ SEXP MC_match_call (
           if(TAG(formals) == R_DotsSymbol) {
             missing_dots = 1;  // Need this for when we expand dots
           }
-          if(!asLogical(empty_formals)) {
+          if(!empt_frm) {
             continue;
         } }
         /*
         strategy is to make a copy of the formals, append, advance one, and
         then re-attach the rest of the match arguments
         */
-        if((asLogical(empty_formals) && missing) || asLogical(default_formals)) {
+        if((empt_frm && missing) || def_frm) {
           if(one_match) {  // Already have one matched
             form_cpy = PROTECT(duplicate(formals));
             matched_tail = matched2;

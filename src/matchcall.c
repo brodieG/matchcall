@@ -31,7 +31,6 @@ void R_init_matchcall(DllInfo *info)
   NULL, callMethods,
   NULL, NULL);
 }
-
 /* -------------------------------------------------------------------------- *\
 |                                                                              |
 |                                  HELPER                                      |
@@ -260,7 +259,7 @@ SEXP MC_match_call (
   }
   SEXP tail;
 
-  if (t2 != R_MissingArg && strcmp(CHAR(asChar(dots)), "exclude")) {  /* so we did something above */
+  if (t2 != R_MissingArg && strcmp(dots_char, "exclude")) {  /* so we did something above */
     if(CAR(actuals) == R_DotsSymbol ) {
       UNPROTECT(2);
       actuals = listAppend(t2, CDR(actuals));
@@ -296,21 +295,20 @@ SEXP MC_match_call (
   // - Invoke `match.call` -----------------------------------------------------
 
   // Manufacture call to `match.call` now that we have found the dots (this is
-  // taken from Writing R Extensions).  Note, we're erring on the side of
-  // overPROTECTing here.
+  // taken from Writing R Extensions).
 
   SEXP t, u, v;  // Need to create a quoted version of the call we captured
   u = v = PROTECT(allocList(2));
   SET_TYPEOF(u, LANGSXP);
-  SETCAR(u, PROTECT(install("quote")));
-  v = PROTECT(CDR(u));
+  SETCAR(u, install("quote"));
+  v = CDR(u);
   SETCAR(v, sc_target);
 
   t = PROTECT(allocList(4));
-  SETCAR(t, PROTECT(install("match.call")));
+  SETCAR(t, install("match.call"));
   SETCADR(t, fun);
   SETCADDR(t, u);
-  SETCADDDR(t, PROTECT(ScalarLogical(0)));  // Do not expand dots ever, done below
+  SETCADDDR(t, ScalarLogical(0));  // Do not expand dots ever, done below
   SET_TYPEOF(t, LANGSXP);
 
   // PrintValue(t);
@@ -389,8 +387,8 @@ SEXP MC_match_call (
   // Expand or drop dots as appropriate
 
   if(   // Has to be expand or exclude (include doesn't require anything done here)
-    !strcmp("exclude", CHAR(asChar(dots))) ||
-    (!strcmp("expand", CHAR(asChar(dots))) && missing_dots) // If dots are missing and attempt to expand, remove them to avoid crash (plus, this makes sense)
+    !strcmp("exclude", dots_char) ||
+    (!strcmp("expand", dots_char) && missing_dots) // If dots are missing and attempt to expand, remove them to avoid crash (plus, this makes sense)
   ) {
     if(TAG(matched) == R_DotsSymbol) {
       matched = CDR(matched);                   // Drop dots
@@ -401,7 +399,7 @@ SEXP MC_match_call (
           SETCDR(matched2, tail);               // Drop dots
           break;
     } } }
-  } else if (!strcmp("expand", CHAR(asChar(dots)))) {
+  } else if (!strcmp("expand", dots_char)) {
     if(TAG(matched) == R_DotsSymbol) {
       if(TYPEOF(CAR(matched)) != 2)
         error("Logic Error, expected a pair list as the values");
@@ -414,13 +412,13 @@ SEXP MC_match_call (
           listAppend(matched2, tail); // Expand dots
           break;
     } } }
-  } else if(strcmp("include", CHAR(asChar(dots)))) {
-    error("Logic Error: unexpected `dots` argument value %s", CHAR(asChar(dots)));
+  } else if(strcmp("include", dots_char)) {
+    error("Logic Error: unexpected `dots` argument value %s", dots_char);
   }
   SETCDR(match_res, matched);
 
   // - Finalize ----------------------------------------------------------------
 
-  UNPROTECT(10);
+  UNPROTECT(6);
   return match_res;
 }

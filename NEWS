@@ -1,3 +1,14 @@
+matchcall 0.2.0
+--------------------------------------------------------------------------------
+
+Initial feature "complete" release, passes R CMD check, etc.
+
+Features:
+
+* `empty.formals` now working
+* `user.formals` now working
+* removed `eval.formals` option since no real use case
+
 matchcall 0.1.2
 --------------------------------------------------------------------------------
 

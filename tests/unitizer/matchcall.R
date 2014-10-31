@@ -140,20 +140,27 @@ unitizer_sect(
   fun1(z=3, w=5)
   fun1(1, 2)
 
-  # fun2 <- function(x, y, z=TRUE, w=letters[1:3])
-  #   match_call(user.formals=FALSE, default.formals=TRUE, empty.formals=TRUE)
+  fun2 <- function(x, y, z=TRUE, w=letters[1:3])
+    match_call(user.formals=FALSE, default.formals=TRUE, empty.formals=TRUE)
 
-  # fun2()
-  # fun2(z=3)
-  # fun2(z=3, w=5)
-  # fun2(1, 2)
+  fun2()
+  fun2(z=3)
+  fun2(z=3, w=5)
+  fun2(1, 2)
 
-  # fun3 <- function(x, y, ..., z=TRUE, w=letters[1:3])
-  #   match_call(user.formals=FALSE, default.formals=TRUE, empty.formals=TRUE)
+  fun3 <- function(x, y, ..., z=TRUE, w=letters[1:3])
+    match_call(user.formals=FALSE, default.formals=TRUE, empty.formals=TRUE)
 
-  # fun3()
-  # fun3(z=3)
-  # fun3(z=3, w=5)
-  # fun3(z=3, w=5, q="hello")  # should drop dots
-  # fun3(1, 2)
+  fun3()
+  fun3(z=3)
+  fun3(z=3, w=5)
+  fun3(z=3, w=5, q="hello")
+  fun3(1, 2)
+
+  fun4 <- function(x, y, ..., z=TRUE, w=letters[1:3])
+    match_call(user.formals=FALSE, default.formals=TRUE, empty.formals=TRUE, dots="include")
+
+  fun4()
+  fun3(z=3, w=5, q="hello")  # should drop dots
+
 })

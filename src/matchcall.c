@@ -378,13 +378,18 @@ SEXP MC_match_call (
             error("Logic Error: unexpectedly ran out of matched formals; contact maintainer");
           if(one_match) {
             SETCDR(matched_prev, CDR(matched2));
+            matched2 = matched_prev;
           } else {
             matched = matched_prev = CDR(matched2);
-        } }
-        // Now we know we have at least one formal already dealt with, which
-        // affects the logic of how we append/modify the formals pair list
+          }
+        } else {
+          // Now we know we have at least one formal already dealt with, which
+          // affects the logic of how we append/modify the formals pair list,
+          // note how if we are not yet in one_match mode and we drop a user
+          // formal just above, we remain in not one_match mode
 
-        one_match = 1;
+          one_match = 1;
+        }
       }
       // Now advance the matched formals to compare with the next formal in for loop
 

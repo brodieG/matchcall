@@ -64,7 +64,7 @@ unitizer_sect("Examples that break match.call", {
   fun3(3, "test", 59, x=45, zest="lemon", (58), (60))
 })
 unitizer_sect(
-  "Doc Example",
+  "Doc Examples",
   compare=unitizerItemTestsFuns(output=identical),  # Need to check output here
 {
   fun1 <- function(a, b) {
@@ -82,6 +82,15 @@ unitizer_sect(
   fun <- function(a, b, c=TRUE, ...)
     match_call(default.formals=TRUE, dots="include")
   fun(5, 6, x=list(1:10, FALSE))
+
+  fun3a <- function(x) fun4a()
+  fun4a <- function() match_call(2)
+
+  fun3b <- function(x) fun4b()  # Note: fun4b defined outside fun3b
+  fun4b <- function() match.call(definition=fun3b, call=sys.call(sys.parent()))
+
+  fun3a(1 + 1)       # `match_call` works
+  fun3b(1 + 1)       # `match.call` also works, but only if we explicitly specify `definition`
 })
 unitizer_sect(
   "Default Formals", {

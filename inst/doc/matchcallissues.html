@@ -10,7 +10,7 @@
 
 <meta name="author" content="Brodie Gaslam" />
 
-<meta name="date" content="2014-10-25" />
+<meta name="date" content="2014-10-31" />
 
 <title>match.call Corner Cases</title>
 
@@ -54,7 +54,7 @@ code > span.er { color: #ff0000; font-weight: bold; }
 <div id="header">
 <h1 class="title"><code>match.call</code> Corner Cases</h1>
 <h4 class="author"><em>Brodie Gaslam</em></h4>
-<h4 class="date"><em>2014-10-25</em></h4>
+<h4 class="date"><em>2014-10-31</em></h4>
 </div>
 
 
@@ -66,7 +66,7 @@ code > span.er { color: #ff0000; font-weight: bold; }
 <li>For functions that include <code>...</code> in their formals</li>
 <li>And are called by functions that forward <code>...</code></li>
 </ul>
-<p>This issue cropped up when trying to match calls that happened earlier in the dynamic call stack to the call to <code>match.call</code>.</p>
+<p>This issue cropped up when trying to match calls that happened earlier in the dynamic call stack to the call to <code>match.call</code> (e.g. the grand-parent call).</p>
 </div>
 <div id="an-example-of-the-problem" class="section level2">
 <h2>An Example of the Problem</h2>
@@ -84,15 +84,15 @@ code > span.er { color: #ff0000; font-weight: bold; }
 <ul>
 <li>We lost the first argument (999)</li>
 <li>The second and third arguments both show up as <code>..X</code> instead of their expressions</li>
-<li>The second argument is mis-matched to <code>b</code> (well, you can’t tell that from the above, but trust me, it is).</li>
+<li>The second argument is mis-matched to <code>b</code> (this isn’t obvious from the above, but it is mismatched).</li>
 </ul>
 <p>Also, note that <code>sys.call(sys.parent())</code> is not the same as the default value for argument <code>call</code> of <code>match.call</code> even though it looks like it is. The difference is in the example above, the expression is evaluated in the parent context, whereas the default <code>call</code> value is evaluated within <code>match.call</code>’s context.</p>
 </div>
 <div id="source-of-problem" class="section level2">
 <h2>Source of Problem</h2>
-<p>The reason <code>match.call</code> doesn’t work properly in the aforementioned circumstances is that <code>match.call</code> always uses the context of the function that invokes <code>match.call</code> to substitute the <code>...</code> argument, irrespective of where the call you are attempting to match is issued. In our simple example, <code>match.call</code> will be matching the dots in the parent context of <code>fun_par</code>, instead of the parent context of <code>fun_gpar</code>.</p>
-<p>Since <code>fun_gpar</code> has a formal argument <code>b</code> in addition to <code>...</code>, when we invoke <code>fun_gpar(...)</code> the actual <code>...</code> argument inside <code>fun_gpar</code> will be the original <code>...</code> argument passed to <code>fun_gpar</code>, <em>less</em> the explicit formal arguments that are matched. In this case, <code>b</code> positionally matches the 999, so the <code>...</code> inside <code>fun_gpar</code> no longer contains 999, but <code>match.call</code> uses this 999-less <code>...</code> to match the <code>fun_gpar(...)</code> call, not the original <code>...</code> in the parent context of <code>fun_gpar</code>.</p>
-<p>This behavior is not unreasonable since <code>match.call</code> doesn’t provide any way to give it the correct context for substituting the dots in.</p>
+<p>The reason <code>match.call</code> doesn’t work properly in the aforementioned circumstances is that <code>match.call</code> always uses the lexical stack of the function that invokes <code>match.call</code> to substitute the <code>...</code> argument, irrespective of where the call you are attempting to match is issued. In our simple example, <code>match.call</code> will be matching the dots in the <strong>lexical</strong> parent of <code>fun_par</code>, instead of in the <strong>calling</strong> frame of <code>fun_gpar</code>. In this case, <code>match.call</code> is matching to the dots in <code>fun_gpar &lt;- function(b, ...) {</code> on the second line instead of the dots in <code>fun_gpar(...)</code> on the 7th line. These look similar, but are really completely different.</p>
+<p>This mismatch causes the problems described above. Since <code>fun_gpar</code> has a formal argument <code>b</code> in addition to <code>...</code>, when we invoke <code>fun_gpar(...)</code> the actual <code>...</code> argument inside <code>fun_gpar</code> will be the original <code>...</code> argument passed to <code>fun_gpar</code>, <strong>less</strong> the explicit formal arguments that are matched. In this case, <code>b</code> positionally matches the 999, so the <code>...</code> inside <code>fun_gpar</code> no longer contains 999, but <code>match.call</code> uses this 999-less <code>...</code> to match the <code>fun_gpar(...)</code> call, not the original <code>...</code> in the dynamic parent frame parent of <code>fun_gpar</code>.</p>
+<p>This behavior is not unreasonable since <code>match.call</code> doesn’t provide any way to give it the correct frame for substituting the dots in.</p>
 <p>In addition, when substituting dots, R will replace any non-constant values with <code>..X</code>, etc. Not entirely clear why this happens, but it is done in this following snippet of code in <code>subDots</code> at lines 1258-1268 in <code>src/main/unique.c</code> (R 3.0.2):</p>
 <pre class="sourceCode c"><code class="sourceCode c"><span class="kw">for</span>(a = dots, b = rval, i = <span class="dv">1</span>; i &lt;= len; a = CDR(a), b = CDR(b), i++) {
   snprintf(tbuf, <span class="dv">10</span>, <span class="st">&quot;..%d&quot;</span>,i);
@@ -114,11 +114,11 @@ code > span.er { color: #ff0000; font-weight: bold; }
 <ol style="list-style-type: decimal">
 <li><code>fun_gpar</code> must be a LEXICAL parent of <code>fun_par</code> otherwise we get error “… used in a situation where it does not exist”; this demonstrates that <code>match.call</code> descends through the lexical stack, not the dynamic stack.</li>
 <li>If <code>fun_par</code> has a <code>...</code> in its formal definition, then none of the <code>...</code> arguments of <code>fun_gpar</code> are captured if the call to <code>fun_gpar</code> doesn’t also include the <code>...</code> arguments. This is because we redefine <code>...</code> to be the arguments to <code>fun_par</code>, but then our call to <code>fun_par</code> doesn’t have any arguments, so the lexically earliest set of dots is empty.</li>
-<li>If <code>fun_par</code> doesn’t have any formals, then <code>match.call</code> will grab the <code>...</code> values, but with limitations:</li>
-</ol>
+<li>If <code>fun_par</code> doesn’t have any formals, then <code>match.call</code> will grab the <code>...</code> values, but with limitations:
 <ol style="list-style-type: lower-alpha">
 <li>unnamed arguments in <code>...</code> will be consumed by the named formals of <code>fun_gpar</code> to the extent those are not otherwise matched, but these consumed arguments will not show up in the output of <code>match.call</code></li>
 <li>If the call to <code>fun_gpar</code> involves expressions or symbols, these are replaced with <code>..1</code>, <code>..2</code>, etc. instead of being captured properly</li>
+</ol></li>
 </ol>
 <p>See below for actual code examples</p>
 </div>
@@ -133,14 +133,13 @@ fun_par &lt;-<span class="st"> </span>function() <span class="kw">match.call</sp
 </div>
 <div id="scenario-2" class="section level3">
 <h3>Scenario 2:</h3>
-<p>note here we make <code>fun_par</code> an anonymous function for the sake of compactness</p>
 <pre class="sourceCode r"><code class="sourceCode r">fun2 &lt;-<span class="st"> </span>function(a, ...) {
   fun_gpar &lt;-<span class="st"> </span>function(b, ...) {
-    (function(...) <span class="kw">match.call</span>(fun_gpar, <span class="kw">sys.call</span>(<span class="kw">sys.parent</span>()), <span class="dt">expand.dots=</span>F))()
+    fun_par &lt;-<span class="st"> </span>function(...) <span class="kw">match.call</span>(fun_gpar, <span class="kw">sys.call</span>(<span class="kw">sys.parent</span>()), <span class="dt">expand.dots=</span>F)
+    <span class="kw">fun_par</span>()
   }
   <span class="kw">fun_gpar</span>(a, ...)
 }
-
 <span class="kw">fun2</span>(<span class="dv">3</span>, <span class="st">&quot;test&quot;</span>, <span class="dt">x=</span><span class="dv">45</span>, <span class="dt">zest=</span><span class="st">&quot;lemon&quot;</span>)</code></pre>
 <pre><code>## fun_gpar(b = a)</code></pre>
 </div>
@@ -148,7 +147,8 @@ fun_par &lt;-<span class="st"> </span>function() <span class="kw">match.call</sp
 <h3>Scenario 3.a:</h3>
 <pre class="sourceCode r"><code class="sourceCode r">fun3 &lt;-<span class="st"> </span>function(a, ...) {
   fun_gpar &lt;-<span class="st"> </span>function(b, c, d, ...) {
-    (function() <span class="kw">match.call</span>(fun_gpar, <span class="kw">sys.call</span>(<span class="kw">sys.parent</span>()), <span class="dt">expand.dots=</span>F))()
+    fun_par &lt;-<span class="st"> </span>function() <span class="kw">match.call</span>(fun_gpar, <span class="kw">sys.call</span>(<span class="kw">sys.parent</span>()), <span class="dt">expand.dots=</span>F)
+    <span class="kw">fun_par</span>()
   }
   <span class="kw">fun_gpar</span>(a, ...)
 }

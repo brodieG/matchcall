@@ -23,17 +23,10 @@
 #'   to tolerate in closure definitions.
 #' @param empty.formals set to TRUE to include formals that were not specified
 #'   and do not have default values
-#' @param eval.formals set to TRUE if you want the argument values to be
-#'   evaluated (defaults in invoking function body, rest in parent of invoking
-#'   function).  Note it is the argument expression that is evaluated, not the
-#'   argument itself.  This should only make a difference in functions where
-#'   the argument is modified in the function body before \code{`match_call`}
-#'   is invoked (this will return the original expression, not the modified one).
 #' @param user.formals set to FALSE if you want to exclude arguments that the
 #'   user specified; this should almost never be needed unless you specifically
 #'   want to know what arguments are using default values
-#' @return the call that invoked the function match_call() is invoked from (as a
-#'   list if `eval.formals`==TRUE)
+#' @return the parent call that led to the invocation of match_call()
 #' @useDynLib matchcall, .registration=TRUE, .fixes="MC_"
 #' @examples
 #' # Compare `match.call` and `match_call`
@@ -58,7 +51,7 @@ match_call <- function(n=1L, dots="expand", default.formals=FALSE, empty.formals
   eval.formals=FALSE, user.formals=TRUE)
   .Call(
     MC_match_call,
-    dots, default.formals, empty.formals, eval.formals, user.formals,
+    dots, default.formals, empty.formals, user.formals,
     n, sys.frames(), sys.calls(), sys.parents()  # note slightly faster than `sys.frame` and `sys.call`, for some reason
   )
 #' Help Test Fun
@@ -74,7 +67,8 @@ mc_test <- function(x) {
 #' @keywords internal
 
 match_call_old <- function(dots="expand", default.formals=FALSE, empty.formals=FALSE,
-  eval.formals=FALSE, user.formals=TRUE, parent.offset=0L, bypass.checks=FALSE) {
+  user.formals=TRUE, parent.offset=0L, bypass.checks=FALSE
+) {
   if(!is_int(parent.offset)) stop("Argument `parent.offset` must be a 1 length integer vector.")
 
   if(!bypass.checks) {

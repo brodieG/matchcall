@@ -9,14 +9,14 @@
 \* -------------------------------------------------------------------------- */
 
 SEXP MC_match_call (
-  SEXP dots, SEXP default_formals, SEXP empty_formals, SEXP eval_formals,
+  SEXP dots, SEXP default_formals, SEXP empty_formals,
   SEXP user_formals, SEXP parent_offset, SEXP sys_frames,
   SEXP sys_calls, SEXP sys_pars);
 SEXP MC_test (SEXP x);
 
 static const
 R_CallMethodDef callMethods[] = {
-  {"match_call", (DL_FUNC) &MC_match_call, 9},
+  {"match_call", (DL_FUNC) &MC_match_call, 8},
   {"test", (DL_FUNC) &MC_test, 1},
   {NULL, NULL, 0}
 };
@@ -88,15 +88,14 @@ SEXP getDots(SEXP rho)
 /* Normal version, a little slower but more flexible */
 
 SEXP MC_match_call (
-  SEXP dots, SEXP default_formals, SEXP empty_formals, SEXP eval_formals,
-  SEXP user_formals, SEXP parent_offset, SEXP sys_frames, SEXP sys_calls,
-  SEXP sys_pars
+  SEXP dots, SEXP default_formals, SEXP empty_formals, SEXP user_formals,
+  SEXP parent_offset, SEXP sys_frames, SEXP sys_calls, SEXP sys_pars
 ) {
   R_xlen_t par_off, frame_len = 0, frame_stop, call_stop, par_off_count;  // Being a bit sloppy about what is really an int vs R_xlen_t; likely need to clean up at some point
   SEXPTYPE sys_frames_type, sys_calls_type, type_tmp;
   SEXP sys_frame, sys_call, sf_target, sc_target, fun, actuals, t2, t1;
   const char * dots_char;
-  int def_frm, empt_frm, usr_frm, ev_frm;
+  int def_frm, empt_frm, usr_frm;
 
   // - Validate ----------------------------------------------------------------
 
@@ -117,11 +116,6 @@ SEXP MC_match_call (
   if(
     TYPEOF(empty_formals) != LGLSXP || XLENGTH(empty_formals) != 1L ||
     (empt_frm = asLogical(empty_formals)) == NA_LOGICAL
-  )
-    error("Argument `empty.formals` must be logical(1L) and not NA.");
-  if(
-    TYPEOF(eval_formals) != LGLSXP || XLENGTH(eval_formals) != 1L ||
-    (ev_frm = asLogical(eval_formals)) == NA_LOGICAL
   )
     error("Argument `empty.formals` must be logical(1L) and not NA.");
   if(
@@ -417,6 +411,7 @@ SEXP MC_match_call (
     error("Logic Error: unexpected `dots` argument value %s", dots_char);
   }
   SETCDR(match_res, matched);
+
 
   // - Finalize ----------------------------------------------------------------
 

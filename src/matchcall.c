@@ -372,9 +372,22 @@ SEXP MC_match_call (
             UNPROTECT(1);
           }
         }
-      } else {
+      } else {          // User actually input something
+        if(!usr_frm) {  // But we don't want to keep it
+          if(matched2 == R_NilValue)
+            error("Logic Error: unexpectedly ran out of matched formals; contact maintainer");
+          if(one_match) {
+            SETCDR(matched_prev, CDR(matched2));
+          } else {
+            matched = matched_prev = CDR(matched2);
+        } }
+        // Now we know we have at least one formal already dealt with, which
+        // affects the logic of how we append/modify the formals pair list
+
         one_match = 1;
       }
+      // Now advance the matched formals to compare with the next formal in for loop
+
       if(matched2 != R_NilValue)
         matched_prev = matched2;
       matched2 = CDR(matched2);  // Need to advance here b/c if we continue, we do not want to advance matched2

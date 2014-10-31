@@ -4,7 +4,7 @@
 \title{Match Closure Arguments To Formals}
 \usage{
 match_call(n = 1L, dots = "expand", default.formals = FALSE,
-  empty.formals = FALSE, eval.formals = FALSE, user.formals = TRUE)
+  empty.formals = FALSE, user.formals = TRUE)
 }
 \arguments{
 \item{n}{integer(1L) how many frames to look up the call stack, analogous to
@@ -51,7 +51,7 @@ fun1 <- function(a, b) {
   print(match_call())
 
   cat("\\n**Matching Grand-Parent Call**\\n")
-  print(match.call(fun2, sys.call(sys.parent())))
+  print(match.call(call=sys.call(sys.parent())))
   print(match_call(2))
 }
 fun2 <- function(c, d) fun1(a + 1, b - 1)

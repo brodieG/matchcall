@@ -37,7 +37,7 @@
 #'   print(match_call())
 #'
 #'   cat("\n**Matching Grand-Parent Call**\n")
-#'   print(match.call(fun2, sys.call(sys.parent())))
+#'   print(match.call(call=sys.call(sys.parent())))
 #'   print(match_call(2))
 #' }
 #' fun2 <- function(c, d) fun1(a + 1, b - 1)
@@ -48,8 +48,9 @@
 #' }
 #' fun(5, 6, x=list(1:10, FALSE))
 
-match_call <- function(n=1L, dots="expand", default.formals=FALSE, empty.formals=FALSE,
-  eval.formals=FALSE, user.formals=TRUE)
+match_call <- function(
+  n=1L, dots="expand", default.formals=FALSE, empty.formals=FALSE, user.formals=TRUE
+)
   .Call(
     MC_match_call,
     dots, default.formals, empty.formals, user.formals,

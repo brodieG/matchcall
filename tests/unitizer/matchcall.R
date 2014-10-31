@@ -129,4 +129,31 @@ unitizer_sect(
   fun4()   # Expand dots even if empty, should disappear
 
 })
+unitizer_sect(
+  "Exclude User Formals", {
 
+  fun1 <- function(x, y, z=TRUE, w=letters[1:3])
+    match_call(user.formals=FALSE, default.formals=TRUE)
+
+  fun1()
+  fun1(z=3)
+  fun1(z=3, w=5)
+  fun1(1, 2)
+
+  # fun2 <- function(x, y, z=TRUE, w=letters[1:3])
+  #   match_call(user.formals=FALSE, default.formals=TRUE, empty.formals=TRUE)
+
+  # fun2()
+  # fun2(z=3)
+  # fun2(z=3, w=5)
+  # fun2(1, 2)
+
+  # fun3 <- function(x, y, ..., z=TRUE, w=letters[1:3])
+  #   match_call(user.formals=FALSE, default.formals=TRUE, empty.formals=TRUE)
+
+  # fun3()
+  # fun3(z=3)
+  # fun3(z=3, w=5)
+  # fun3(z=3, w=5, q="hello")  # should drop dots
+  # fun3(1, 2)
+})

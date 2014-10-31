@@ -8,4 +8,5 @@ mc_test(x)
 \description{
 Help Test Fun
 }
+\keyword{internal}
 

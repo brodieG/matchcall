@@ -25,7 +25,8 @@
 #'   and do not have default values
 #' @param user.formals set to FALSE if you want to exclude arguments that the
 #'   user specified; this should almost never be needed unless you specifically
-#'   want to know what arguments are using default values
+#'   want to know what arguments are using default values (in which case you
+#'   also be setting `default.formals` to TRUE)
 #' @return the parent call that led to the invocation of match_call()
 #' @useDynLib matchcall, .registration=TRUE, .fixes="MC_"
 #' @examples

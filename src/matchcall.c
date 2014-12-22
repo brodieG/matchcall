@@ -27,9 +27,8 @@ void R_init_matchcall(DllInfo *info)
     No .Fortran() or .External() routines,
     so pass those arrays as NULL.
   */
-  R_registerRoutines(info,
-  NULL, callMethods,
-  NULL, NULL);
+  R_registerRoutines(info, NULL, callMethods, NULL, NULL);
+  R_RegisterCCallable("matchcall", "MC_match_call", (DL_FUNC) MC_match_call);
 }
 /* -------------------------------------------------------------------------- *\
 |                                                                              |

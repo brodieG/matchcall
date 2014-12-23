@@ -9,14 +9,14 @@
 \* -------------------------------------------------------------------------- */
 
 SEXP MC_match_call (
-  SEXP dots, SEXP default_formals, SEXP empty_formals,
-  SEXP user_formals, SEXP parent_offset, SEXP sys_frames,
-  SEXP sys_calls, SEXP sys_pars);
+  SEXP dots, SEXP default_formals, SEXP empty_formals, SEXP user_formals,
+  SEXP parent_offset, SEXP definition, SEXP sys_frames, SEXP sys_calls,
+  SEXP sys_pars);
 SEXP MC_test (SEXP x);
 
 static const
 R_CallMethodDef callMethods[] = {
-  {"match_call", (DL_FUNC) &MC_match_call, 8},
+  {"match_call", (DL_FUNC) &MC_match_call, 9},
   {"test", (DL_FUNC) &MC_test, 1},
   {NULL, NULL, 0}
 };
@@ -86,7 +86,8 @@ SEXP getDots(SEXP rho)
 
 SEXP MC_match_call (
   SEXP dots, SEXP default_formals, SEXP empty_formals, SEXP user_formals,
-  SEXP parent_offset, SEXP sys_frames, SEXP sys_calls, SEXP sys_pars
+  SEXP parent_offset, SEXP definition, SEXP sys_frames, SEXP sys_calls,
+  SEXP sys_pars
 ) {
   R_xlen_t par_off, frame_len = 0, frame_stop, call_stop, par_off_count;  // Being a bit sloppy about what is really an int vs R_xlen_t; likely need to clean up at some point
   SEXPTYPE sys_frames_type, sys_calls_type, type_tmp;
@@ -126,6 +127,8 @@ SEXP MC_match_call (
     ) || XLENGTH(parent_offset) != 1L || (par_off = asInteger(parent_offset)) < 0
   )
     error("Argument `n` must be integer(1L) and not less than zero.");
+  if(definition != R_NilValue && TYPEOF(definition) != CLOSXP)
+    error("Argument `definition` must be a closure if provided.");
 
   // Validate internal inputs; these should be the call and frame stack.  Haven't
   // figured out a way to get these directly from C so we rely on generating them
@@ -221,16 +224,18 @@ SEXP MC_match_call (
 
   // - Dots --------------------------------------------------------------------
 
-  // Pull out function from relevant frame
+  // Get function definition from relevant frame, or use provided one if available
 
-  if(TYPEOF(CAR(sc_target)) == SYMSXP)
-    PROTECT(fun = findFun(CAR(sc_target), sf_target));
-  else
-    PROTECT(fun = eval(CAR(sc_target), sf_target));
-
-  if (TYPEOF(fun) != CLOSXP)
+  if(definition != R_NilValue) {
+    fun = PROTECT(definition); // unnecessary PROTECT for stack balance
+  } else {
+    if(TYPEOF(CAR(sc_target)) == SYMSXP)
+      PROTECT(fun = findFun(CAR(sc_target), sf_target));
+    else
+      PROTECT(fun = eval(CAR(sc_target), sf_target));
+    if(TYPEOF(fun) != CLOSXP)
       error("Unable to find a closure from within which `match_call` was called");
-
+  }
   PROTECT(actuals = CDR(sc_target));
 
     /* If there is a ... symbol then expand it out in the sysp env

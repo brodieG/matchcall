@@ -173,5 +173,12 @@ unitizer_sect(
 
   fun4()
   fun3(z=3, w=5, q="hello")  # should drop dots
+})
+unitizer_sect("definition", {
+  fun1 <- function(xylophone, zebra, yellow) NULL
+  fun2 <- function(x, y, z, ...) match_call(definition=fun1)
 
+  fun2(1, 2, 3)
+  fun2(z=1, 2, 3)
+  fun2(z=1, x=2, 3, yellow=4)
 })

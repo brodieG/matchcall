@@ -36,6 +36,8 @@
 #'   user specified; this should almost never be needed unless you specifically
 #'   want to know what arguments are using default values (in which case you
 #'   also be setting `default.formals` to TRUE)
+#' @param definition same as \code{`definition`} in \code{`\link{match.call}`},
+#'   though shouldn't be needed most of the time
 #' @return the parent call that led to the invocation of match_call()
 #' @useDynLib matchcall, .registration=TRUE, .fixes="MC_"
 #' @examples
@@ -71,12 +73,13 @@
 #' fun3b(1 + 1)       # `match.call` also works, but only if we explicitly specify `definition`
 
 match_call <- function(
-  n=1L, dots="expand", default.formals=FALSE, empty.formals=FALSE, user.formals=TRUE
+  n=1L, dots="expand", default.formals=FALSE, empty.formals=FALSE,
+  user.formals=TRUE, definition=NULL
 )
   .Call(
     MC_match_call,
     dots, default.formals, empty.formals, user.formals,
-    n, sys.frames(), sys.calls(), sys.parents()  # note slightly faster than `sys.frame` and `sys.call`, for some reason
+    n, definition, sys.frames(), sys.calls(), sys.parents()  # note slightly faster than `sys.frame` and `sys.call`, for some reason
   )
 #' Help Test Fun
 #'

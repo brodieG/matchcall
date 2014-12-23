@@ -123,9 +123,9 @@ SEXP MC_match_call (
   if(
     (
       TYPEOF(parent_offset) != INTSXP && TYPEOF(parent_offset) != REALSXP
-    ) || XLENGTH(parent_offset) != 1L || (par_off = asInteger(parent_offset)) < 1
+    ) || XLENGTH(parent_offset) != 1L || (par_off = asInteger(parent_offset)) < 0
   )
-    error("Argument `n` must be integer(1L) and not less than one.");
+    error("Argument `n` must be integer(1L) and not less than zero.");
 
   // Validate internal inputs; these should be the call and frame stack.  Haven't
   // figured out a way to get these directly from C so we rely on generating them
@@ -190,10 +190,10 @@ SEXP MC_match_call (
       frame_len, XLENGTH(sys_pars)
     );
   }
+  // Need to get call and the parent frame of the call based on the offset value
+  call_stop = frame_len;  // Unless offset, use last call in stack
 
-  call_stop = INTEGER(sys_pars)[frame_len - 1];  // First parent
-
-  for(par_off_count = par_off; par_off_count > 1; par_off_count--) {
+  for(par_off_count = par_off; par_off_count >= 1; par_off_count--) {
     call_stop = call_stop > 1 ? INTEGER(sys_pars)[call_stop - 1] : 0;      // Find parent call using `sys.parents()` data
   }
   frame_stop = call_stop ? INTEGER(sys_pars)[call_stop - 1] : 0; // Now the frame to evaluate the parent call in

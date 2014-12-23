@@ -3,11 +3,17 @@ matchcall 0.2.0
 
 Initial feature "complete" release, passes R CMD check, etc.
 
+Behavior Changes:
+
+* `n=0` now allowed as an argument value for `match_call`
+
 Features:
 
 * `empty.formals` now working
 * `user.formals` now working
 * removed `eval.formals` option since no real use case
+* `MC_match_call` underlying C function exported with `R_RegisterCCallable` for
+  use in other packages
 
 matchcall 0.1.2
 --------------------------------------------------------------------------------

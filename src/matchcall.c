@@ -84,8 +84,6 @@ SEXP getDots(SEXP rho)
 |                                                                              |
 \* -------------------------------------------------------------------------- */
 
-/* Normal version, a little slower but more flexible */
-
 SEXP MC_match_call (
   SEXP dots, SEXP default_formals, SEXP empty_formals, SEXP user_formals,
   SEXP parent_offset, SEXP sys_frames, SEXP sys_calls, SEXP sys_pars
@@ -159,7 +157,6 @@ SEXP MC_match_call (
   // Need to count frames b/c we need to calculate the offset from the end of
   // the frame list
 
-
   for(
     sys_frame = sys_frames, sys_call = sys_calls;
     sys_call != R_NilValue && sys_frame != R_NilValue;
@@ -173,7 +170,7 @@ SEXP MC_match_call (
       );
     if((type_tmp = TYPEOF(CAR(sys_call)) != LANGSXP))  // match.call allows EXPRSXP, and takes the first element, but we don't
       error(
-        "Logic Error: system frames contains non-language (%s) element; contact maintainer.",
+        "Logic Error: system calls contains non-language (%s) element; contact maintainer.",
         type2char(type_tmp)
       );
   }
@@ -200,10 +197,6 @@ SEXP MC_match_call (
     call_stop = call_stop > 1 ? INTEGER(sys_pars)[call_stop - 1] : 0;      // Find parent call using `sys.parents()` data
   }
   frame_stop = call_stop ? INTEGER(sys_pars)[call_stop - 1] : 0; // Now the frame to evaluate the parent call in
-  // PrintValue(sys_calls);
-  // PrintValue(sys_pars);
-  // Rprintf("fstop: %d cstop: %d paroff: %d framelen: %d", frame_stop, call_stop,
-  //   par_off, frame_len);
 
   // Now that we know what frame we want, get it
 
@@ -428,7 +421,6 @@ SEXP MC_match_call (
     error("Logic Error: unexpected `dots` argument value %s", dots_char);
   }
   SETCDR(match_res, matched);
-
 
   // - Finalize ----------------------------------------------------------------
 

@@ -14,6 +14,14 @@ SEXP MC_match_call (
   SEXP sys_pars);
 SEXP MC_test (SEXP x);
 
+// - Objects We Install Once ---------------------------------------------------
+
+// One question: are static objects not garbage collected?  The examples from
+// "Writing R Extensions" don't seem to require the protection of these
+
+SEXP MC_SYM_matchcall;
+SEXP MC_SYM_quote;
+
 static const
 R_CallMethodDef callMethods[] = {
   {"match_call", (DL_FUNC) &MC_match_call, 9},
@@ -27,6 +35,8 @@ void R_init_matchcall(DllInfo *info)
     No .Fortran() or .External() routines,
     so pass those arrays as NULL.
   */
+  MC_SYM_quote = install("quote");
+  MC_SYM_matchcall = install("match.call");
   R_registerRoutines(info, NULL, callMethods, NULL, NULL);
   R_RegisterCCallable("matchcall", "MC_match_call", (DL_FUNC) MC_match_call);
 }
@@ -292,12 +302,12 @@ SEXP MC_match_call (
   SEXP t, u, v;  // Need to create a quoted version of the call we captured
   u = v = PROTECT(allocList(2));
   SET_TYPEOF(u, LANGSXP);
-  SETCAR(u, install("quote"));
+  SETCAR(u, MC_SYM_quote);
   v = CDR(u);
   SETCAR(v, sc_target);
 
   t = PROTECT(allocList(4));
-  SETCAR(t, install("match.call"));
+  SETCAR(t, MC_SYM_matchcall);
   SETCADR(t, fun);
   SETCADDR(t, u);
   SETCADDDR(t, ScalarLogical(0));  // Do not expand dots ever, done below

@@ -373,11 +373,7 @@ SEXP MC_match_call (
   SETCADDDR(t, ScalarLogical(0));  // Do not expand dots ever, done below
   SET_TYPEOF(t, LANGSXP);
 
-  // PrintValue(t);
-
-  SEXP match_res;
-
-  match_res = PROTECT(eval(t, sf_target));
+  SEXP match_res = PROTECT(eval(t, sf_target));
 
   // - Manipulate Result -------------------------------------------------------
 

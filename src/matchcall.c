@@ -88,6 +88,147 @@ SEXP getDots(SEXP rho)
     UNPROTECT(1);
     return rval;
 }
+/*
+Extracts relevant frame and call based on offset, returns both as an R list with
+`the first value set to the frame and the second to the call
+
+Validate internal inputs; these should be the call and frame stack.  Haven't
+figured out a way to get these directly from C so we rely on generating them
+in R and feeding them to this function
+*/
+
+SEXP MC_get_frame_data(SEXP sys_frames, SEXP sys_calls, SEXP sys_pars, int par_off) {
+
+  SEXPTYPE sys_frames_type, sys_calls_type, type_tmp;
+
+  if(
+    (sys_frames_type = TYPEOF(sys_frames)) == NILSXP ||
+    (sys_calls_type = TYPEOF(sys_calls)) == NILSXP
+  )
+    error("This function must be invoked within a closure.");
+  if(sys_frames_type != LISTSXP)
+    error(
+      "Logic Error: unexpected system frames type %s, should be a list of dotted pairs; contact maintainer.",
+      type2char(sys_frames_type)
+    );
+  if(sys_calls_type != LISTSXP)
+    error(
+      "Logic Error: unexpected system calls type %s, should be a list of dotted pairs ; contact maintainer.",
+      type2char(sys_calls_type)
+    );
+  if(TYPEOF(sys_pars) != INTSXP)
+    error(
+      "Logic Error: unexpected system calls type %s, should be a list of an integer vector ; contact maintainer.",
+      type2char(TYPEOF(sys_pars))
+    );
+  // - Retrieve Call & Frame ---------------------------------------------------
+
+  // Need to count frames b/c we need to calculate the offset from the end of
+  // the frame list
+
+  SEXP sys_frame, sys_call;
+  int frame_len=0;
+
+  for(
+    sys_frame = sys_frames, sys_call = sys_calls;
+    sys_call != R_NilValue && sys_frame != R_NilValue;
+    sys_frame = CDR(sys_frame), sys_call = CDR(sys_call)
+  ) {
+    frame_len++;
+    if((type_tmp = TYPEOF(CAR(sys_frame)) != ENVSXP))
+      error(
+        "Logic Error: system frames contains non-environment (%s) element; contact maintainer.",
+        type2char(type_tmp)
+      );
+    if((type_tmp = TYPEOF(CAR(sys_call)) != LANGSXP))  // match.call allows EXPRSXP, and takes the first element, but we don't
+      error(
+        "Logic Error: system calls contains non-language (%s) element; contact maintainer.",
+        type2char(type_tmp)
+      );
+    if(frame_len > 500000)
+      error("Logic Error: frame depth > 500K, not supported; contact maintainer.");
+  }
+  if(sys_frame != R_NilValue || sys_call != R_NilValue) {
+    error("Logic Error: Call stack and frame stack of different lengths; contact maintainer.");
+  }
+  if(frame_len == 1)
+    error("You must run `match_call` within a closure, but it appears you are doing so from top level.");
+  if(frame_len <= par_off)
+    error(
+      "Logic Error: offset (%d) is greater than stack depth (%d)",
+      par_off, frame_len - 1
+    );
+  if(frame_len != XLENGTH(sys_pars)) {
+    error(
+      "Logic Error: Mismatch between number of frames (%d) and length of `sys.parents()` (%d); contact maintainer",
+      frame_len, XLENGTH(sys_pars)
+    );
+  }
+
+  // Need to get call and the parent frame of the call based on the offset value
+  // Unless offset, use last call in stack
+
+  int par_off_count, frame_stop, call_stop=frame_len;
+
+  for(par_off_count = par_off; par_off_count >= 1; par_off_count--) {
+    call_stop = call_stop > 1 ? INTEGER(sys_pars)[call_stop - 1] : 0;      // Find parent call using `sys.parents()` data
+  }
+  frame_stop = call_stop ? INTEGER(sys_pars)[call_stop - 1] : 0; // Now the frame to evaluate the parent call in
+
+  // Now that we know what frame we want, get it
+
+  SEXP sf_target, sc_target;
+
+  if(!frame_stop) {
+    sf_target = R_GlobalEnv;                 // Ran out of frames, so look in global env
+  } else if(frame_stop > 0) {
+    for(
+      sys_frame = sys_frames, frame_len = 1;
+      sys_frame != R_NilValue; sys_frame = CDR(sys_frame), frame_len++
+    )
+      if(frame_len == frame_stop) sf_target = CAR(sys_frame);
+  } else {
+    error("Logic Error: attempting to match to negative frame; contact maintainer.");
+  }
+  // Get call as well
+
+  int call_len, found_call=0;
+
+  for(
+    sys_call = sys_calls, call_len = 1; sys_call != R_NilValue;
+    sys_call = CDR(sys_call), call_len++
+  ) {
+    if(call_len == call_stop) {
+      sc_target = CAR(sys_call);
+      found_call = 1;
+      break;
+    }
+  }
+  if(!found_call)
+    error("Logic Error: unable to find call in call stack; contact maintainer.");
+
+  // Return both in R list
+
+  SEXP res = PROTECT(allocVector(VECSXP, 2));
+  SET_VECTOR_ELT(res, 0, sf_target);
+  SET_VECTOR_ELT(res, 1, sc_target);
+  UNPROTECT(1);
+  return(res);
+}
+/*
+Get fun from call and frame data
+*/
+SEXP MC_get_fun(SEXP frame, SEXP call) {
+  SEXP fun;
+  if(TYPEOF(CAR(call)) == SYMSXP)
+    PROTECT(fun = findFun(CAR(call), frame));
+  else
+    PROTECT(fun = eval(CAR(call), frame));
+  if(TYPEOF(fun) != CLOSXP)
+    error("Logic Error: Unable to find a closure to match; contact maintainer.");
+  UNPROTECT(1);
+  return(fun);
+}
 /* -------------------------------------------------------------------------- *\
 |                                                                              |
 |                                  MAIN FUN                                    |
@@ -99,9 +240,8 @@ SEXP MC_match_call (
   SEXP parent_offset, SEXP definition, SEXP sys_frames, SEXP sys_calls,
   SEXP sys_pars
 ) {
-  R_xlen_t par_off, frame_len = 0, frame_stop, call_stop, par_off_count;  // Being a bit sloppy about what is really an int vs R_xlen_t; likely need to clean up at some point
-  SEXPTYPE sys_frames_type, sys_calls_type, type_tmp;
-  SEXP sys_frame, sys_call, sf_target, sc_target, fun, actuals, t2, t1;
+  R_xlen_t par_off;  // Being a bit sloppy about what is really an int vs R_xlen_t; likely need to clean up at some point
+  SEXP fun, actuals, t2, t1;
   const char * dots_char;
   int def_frm, empt_frm, usr_frm;
 
@@ -140,97 +280,23 @@ SEXP MC_match_call (
   if(definition != R_NilValue && TYPEOF(definition) != CLOSXP)
     error("Argument `definition` must be a closure if provided.");
 
-  // Validate internal inputs; these should be the call and frame stack.  Haven't
-  // figured out a way to get these directly from C so we rely on generating them
-  // in R and feeding them to this function
+  // Technically unncessary as done as part of MC_get_frame_data, but done here
+  // for error message clarity
 
-  if(
-    (sys_frames_type = TYPEOF(sys_frames)) == NILSXP ||
-    (sys_calls_type = TYPEOF(sys_calls)) == NILSXP
-  )
-    error("This function must be invoked within a closure.");
-  if(sys_frames_type != LISTSXP)
-    error(
-      "Logic Error: unexpected system frames type %s, should be a list of dotted pairs; contact maintainer.",
-      type2char(sys_frames_type)
-    );
-  if(sys_calls_type != LISTSXP)
-    error(
-      "Logic Error: unexpected system calls type %s, should be a list of dotted pairs ; contact maintainer.",
-      type2char(sys_calls_type)
-    );
-  if(TYPEOF(sys_pars) != INTSXP)
-    error(
-      "Logic Error: unexpected system calls type %s, should be a list of an integer vector ; contact maintainer.",
-      type2char(TYPEOF(sys_pars))
-    );
-
-  // - Retrieve Call & Frame ---------------------------------------------------
-
-  // Need to count frames b/c we need to calculate the offset from the end of
-  // the frame list
-
-  for(
-    sys_frame = sys_frames, sys_call = sys_calls;
-    sys_call != R_NilValue && sys_frame != R_NilValue;
-    sys_frame = CDR(sys_frame), sys_call = CDR(sys_call)
-  ) {
-    frame_len++;
-    if((type_tmp = TYPEOF(CAR(sys_frame)) != ENVSXP))
-      error(
-        "Logic Error: system frames contains non-environment (%s) element; contact maintainer.",
-        type2char(type_tmp)
-      );
-    if((type_tmp = TYPEOF(CAR(sys_call)) != LANGSXP))  // match.call allows EXPRSXP, and takes the first element, but we don't
-      error(
-        "Logic Error: system calls contains non-language (%s) element; contact maintainer.",
-        type2char(type_tmp)
-      );
+  R_xlen_t stack_depth;
+  if((stack_depth = length(sys_frames)) <= par_off) {
+    error("Argument `n` must be less than stack stack depth (%d)\n", stack_depth);
   }
-  if(sys_frame != R_NilValue || sys_call != R_NilValue) {
-    error("Logic Error: Call stack and frame stack of different lengths; contact maintainer.");
-  }
-  if(frame_len == 1)
-    error("You must run `match_call` within a closure, but it appears you are doing so from top level.");
-  if(frame_len <= par_off)
-    error(
-      "Argument `n` (%d) is greater than stack depth (%d)",
-      par_off, frame_len - 1
-    );
-  if(frame_len != XLENGTH(sys_pars)) {
-    error(
-      "Logic Error: Mismatch between number of frames (%d) and length of `sys.parents()` (%d); contact maintainer",
-      frame_len, XLENGTH(sys_pars)
-    );
-  }
-  // Need to get call and the parent frame of the call based on the offset value
-  call_stop = frame_len;  // Unless offset, use last call in stack
+  // - Get Frame and Calls -----------------------------------------------------
 
-  for(par_off_count = par_off; par_off_count >= 1; par_off_count--) {
-    call_stop = call_stop > 1 ? INTEGER(sys_pars)[call_stop - 1] : 0;      // Find parent call using `sys.parents()` data
-  }
-  frame_stop = call_stop ? INTEGER(sys_pars)[call_stop - 1] : 0; // Now the frame to evaluate the parent call in
+  SEXP frame_call = PROTECT(MC_get_frame_data(sys_frames, sys_calls, sys_pars, par_off));
+  SEXP sf_target, sc_target;
 
-  // Now that we know what frame we want, get it
+  // These should still be protected as they are pointed to by sys_frames and
+  // sys_calls
 
-  if(!frame_stop) {
-    sf_target = R_GlobalEnv;                 // Ran out of frames, so look in global env
-  } else if(frame_stop > 0) {
-    for(
-      sys_frame = sys_frames, frame_len = 1;
-      sys_frame != R_NilValue; sys_frame = CDR(sys_frame), frame_len++
-    )
-      if(frame_len == frame_stop) sf_target = CAR(sys_frame);
-  } else {
-    error("Logic Error: attempting to match to negative frame; contact maintainer.");
-  }
-  // Get call as well
-
-  for(
-    sys_call = sys_calls, frame_len = 1; sys_call != R_NilValue;
-    sys_call = CDR(sys_call), frame_len++
-  )
-    if(frame_len == call_stop) sc_target = PROTECT(CAR(sys_call));
+  sf_target = VECTOR_ELT(frame_call, 0);
+  sc_target = VECTOR_ELT(frame_call, 1);
 
   // - Dots --------------------------------------------------------------------
 
@@ -239,57 +305,51 @@ SEXP MC_match_call (
   if(definition != R_NilValue) {
     fun = PROTECT(definition); // unnecessary PROTECT for stack balance
   } else {
-    if(TYPEOF(CAR(sc_target)) == SYMSXP)
-      PROTECT(fun = findFun(CAR(sc_target), sf_target));
-    else
-      PROTECT(fun = eval(CAR(sc_target), sf_target));
-    if(TYPEOF(fun) != CLOSXP)
-      error("Unable to find a closure from within which `match_call` was called");
+    fun = PROTECT(MC_get_fun(sf_target, sc_target));
   }
   PROTECT(actuals = CDR(sc_target));
 
-    /* If there is a ... symbol then expand it out in the sysp env
-       We need to take some care since the ... might be in the middle
-       of the actuals  */
+  /* Note, this is more or less directly from R sources...
+
+     If there is a ... symbol then expand it out in the sysp env
+     We need to take some care since the ... might be in the middle
+     of the actuals  */
 
   t2 = R_MissingArg;
+  int found_dots = 0;
   for (t1 = actuals ; t1 != R_NilValue ; t1 = CDR(t1) ) {
     if (CAR(t1) == R_DotsSymbol) {
       t2 = PROTECT(getDots(sf_target));
+      found_dots = 1;
       break;
     }
   }
+  if(!found_dots) PROTECT(R_MissingArg); // stack balance
+
   SEXP tail;
 
   if (t2 != R_MissingArg && strcmp(dots_char, "exclude")) {  /* so we did something above */
     if(CAR(actuals) == R_DotsSymbol ) {
-      UNPROTECT(2);
       actuals = listAppend(t2, CDR(actuals));
-      PROTECT(actuals);
     } else {
       for(t1=actuals; t1!=R_NilValue; t1=CDR(t1)) {
         if( CADR(t1) == R_DotsSymbol ) {
           tail = CDDR(t1);
           SETCDR(t1, t2);
-          UNPROTECT(2);
           actuals = listAppend(actuals, tail);
-          PROTECT(actuals);
           break;
-        }
-      }
-    }
-  } else { /* get rid of it */
-    if( CAR(actuals) == R_DotsSymbol ) {
-        UNPROTECT(1);
+    } } }
+  } else if(t2 != R_MissingArg) { /* get rid of it */
+    if(CAR(actuals) == R_DotsSymbol ) {
         actuals = CDR(actuals);
-        PROTECT(actuals);
     } else {
       for(t1=actuals; t1!=R_NilValue; t1=CDR(t1)) {
         if(CADR(t1) == R_DotsSymbol) {
           tail = CDDR(t1);
           SETCDR(t1, tail);
           break;
-  } } } }
+    } } }
+  }
   // Reconstruct the original call in case we messed with dots
 
   SETCDR(sc_target, actuals);
@@ -439,6 +499,6 @@ SEXP MC_match_call (
 
   // - Finalize ----------------------------------------------------------------
 
-  UNPROTECT(6);
+  UNPROTECT(7);
   return match_res;
 }

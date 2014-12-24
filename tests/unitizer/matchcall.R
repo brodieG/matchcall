@@ -95,6 +95,15 @@ unitizer_sect(
   fun3b(1 + 1)       # `match.call` also works, but only if we explicitly specify `definition`
 })
 unitizer_sect(
+  "Frame Depth", {
+  fun1 <- function(x) match_call(x)
+  fun2 <- function(y) fun1(y)
+  fun3 <- function(z) fun2(z)
+  fun4 <- function(w) fun3(w)
+
+  lapply(0:5, fun4)
+} )
+unitizer_sect(
   "Default Formals", {
 
   fun1 <- function(x, y, z=TRUE, w=letters[1:3]) match_call(default.formals=TRUE)

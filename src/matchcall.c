@@ -13,6 +13,8 @@ SEXP MC_match_call (
   SEXP parent_offset, SEXP definition, SEXP sys_frames, SEXP sys_calls,
   SEXP sys_pars);
 SEXP MC_test (SEXP x);
+SEXP MC_get_frame_data(SEXP sys_frames, SEXP sys_calls, SEXP sys_pars, int par_off);
+SEXP MC_get_fun(SEXP frame, SEXP call);
 
 // - Objects We Install Once ---------------------------------------------------
 
@@ -39,6 +41,8 @@ void R_init_matchcall(DllInfo *info)
   MC_SYM_matchcall = install("match.call");
   R_registerRoutines(info, NULL, callMethods, NULL, NULL);
   R_RegisterCCallable("matchcall", "MC_match_call", (DL_FUNC) MC_match_call);
+  R_RegisterCCallable("matchcall", "MC_get_frame_data", (DL_FUNC) MC_get_frame_data);
+  R_RegisterCCallable("matchcall", "MC_get_fun", (DL_FUNC) MC_get_fun);
 }
 /* -------------------------------------------------------------------------- *\
 |                                                                              |

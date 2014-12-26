@@ -93,12 +93,10 @@ SEXP getDots(SEXP rho)
     return rval;
 }
 /*
-Extracts relevant frame and call based on offset, returns both as an R list with
-`the first value set to the frame and the second to the call
-
-Validate internal inputs; these should be the call and frame stack.  Haven't
-figured out a way to get these directly from C so we rely on generating them
-in R and feeding them to this function
+Extracts relevant frame and call based on offset, and returns a linked list with:
+  - CAR: the call
+  - CADR: the stack parent of the call
+  - CADDR: the frame of the call
 */
 
 SEXP MC_get_frame_data(SEXP sys_frames, SEXP sys_calls, SEXP sys_pars, int par_off) {
@@ -168,32 +166,39 @@ SEXP MC_get_frame_data(SEXP sys_frames, SEXP sys_calls, SEXP sys_pars, int par_o
       frame_len, XLENGTH(sys_pars)
     );
   }
-
   // Need to get call and the parent frame of the call based on the offset value
-  // Unless offset, use last call in stack
+  // Unless no offset, then use last call in stack
 
-  int par_off_count, frame_stop, call_stop=frame_len;
+  int par_off_count, frame_stop, frame_stop_prev, call_stop, call_stop_prev;
+  call_stop = call_stop_prev = frame_len;
+
+  // Find parent call using `sys.parents()` data
 
   for(par_off_count = par_off; par_off_count >= 1; par_off_count--) {
-    call_stop = call_stop > 1 ? INTEGER(sys_pars)[call_stop - 1] : 0;      // Find parent call using `sys.parents()` data
+    call_stop_prev = call_stop;  // trac previous
+    call_stop = call_stop > 1 ? INTEGER(sys_pars)[call_stop - 1] : 0;
   }
   frame_stop = call_stop ? INTEGER(sys_pars)[call_stop - 1] : 0; // Now the frame to evaluate the parent call in
+  frame_stop_prev = call_stop_prev ? INTEGER(sys_pars)[call_stop_prev - 1] : 0;
 
+  if(frame_stop_prev < frame_stop)
+    error("Logic Error: previous frame must be greater than next; contact maintainer.");
+  if(frame_stop < 0)
+    error("Logic Error: frame must be positive; contact maintainer.");
   // Now that we know what frame we want, get it
 
-  SEXP sf_target, sc_target;
+  SEXP sf_target=R_NilValue, sf_target_prev=R_NilValue, sc_target;
 
-  if(!frame_stop) {
-    sf_target = R_GlobalEnv;                 // Ran out of frames, so look in global env
-  } else if(frame_stop > 0) {
-    for(
-      sys_frame = sys_frames, frame_len = 1;
-      sys_frame != R_NilValue; sys_frame = CDR(sys_frame), frame_len++
-    )
-      if(frame_len == frame_stop) sf_target = CAR(sys_frame);
-  } else {
-    error("Logic Error: attempting to match to negative frame; contact maintainer.");
+  for(
+    sys_frame = sys_frames, frame_len = 1;
+    sys_frame != R_NilValue; sys_frame = CDR(sys_frame), frame_len++
+  ) {
+    if(frame_len == frame_stop) sf_target = CAR(sys_frame);
+    if(frame_len == frame_stop_prev) sf_target_prev = CAR(sys_frame);
   }
+  if(sf_target == R_NilValue) sf_target = R_GlobalEnv;
+  if(sf_target_prev == R_NilValue) sf_target_prev = R_GlobalEnv;
+
   // Get call as well
 
   int call_len, found_call=0;
@@ -211,13 +216,9 @@ SEXP MC_get_frame_data(SEXP sys_frames, SEXP sys_calls, SEXP sys_pars, int par_o
   if(!found_call)
     error("Logic Error: unable to find call in call stack; contact maintainer.");
 
-  // Return both in R list
+  // Return everything in R list
 
-  SEXP res = PROTECT(allocVector(VECSXP, 2));
-  SET_VECTOR_ELT(res, 0, sf_target);
-  SET_VECTOR_ELT(res, 1, sc_target);
-  UNPROTECT(1);
-  return(res);
+  return(list3(sc_target, sf_target, sf_target_prev));
 }
 /*
 Get fun from call and frame data
@@ -299,8 +300,8 @@ SEXP MC_match_call (
   // These should still be protected as they are pointed to by sys_frames and
   // sys_calls
 
-  sf_target = VECTOR_ELT(frame_call, 0);
-  sc_target = VECTOR_ELT(frame_call, 1);
+  sf_target = CADR(frame_call);
+  sc_target = CAR(frame_call);
 
   // - Dots --------------------------------------------------------------------
 

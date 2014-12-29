@@ -53,14 +53,10 @@ void R_init_matchcall(DllInfo *info)
 SEXP MC_test(SEXP x) {
   SEXP s, t, u;
   PROTECT(s = allocList(2));
-  SETCAR(s, ScalarLogical(1));
-  SETCADR(s, ScalarLogical(0));
-
-  t = CAR(s);
-  u = CADR(s);
-
+  SETCDR(s, R_NilValue);
+  PrintValue(s);
   UNPROTECT(1);
-  return ScalarLogical(asReal(x) > 1);
+  return R_NilValue;
 }
 // Based on subDots in src/main/unique.c
 
@@ -364,142 +360,134 @@ SEXP MC_match_call (
   // Manufacture call to `match.call` now that we have found the dots (this is
   // taken from Writing R Extensions).
 
-  SEXP t, u, v;  // Need to create a quoted version of the call we captured
-  u = v = PROTECT(allocList(2));
+  SEXP t, u;  // Need to create a quoted version of the call we captured
+  u = PROTECT(list2(MC_SYM_quote, sc_target));
   SET_TYPEOF(u, LANGSXP);
-  SETCAR(u, MC_SYM_quote);
-  v = CDR(u);
-  SETCAR(v, sc_target);
 
-  t = PROTECT(allocList(4));
-  SETCAR(t, MC_SYM_matchcall);
-  SETCADR(t, fun);
-  SETCADDR(t, u);
-  SETCADDDR(t, ScalarLogical(0));  // Do not expand dots ever, done below
+  t = PROTECT(list4(MC_SYM_matchcall, fun, u, ScalarLogical(0)));
   SET_TYPEOF(t, LANGSXP);
 
   SEXP match_res = PROTECT(eval(t, sf_target));
 
   // - Manipulate Result -------------------------------------------------------
 
+  SEXP match_track2, match_track = R_NilValue;
   SEXP matched, matched2;
-  int missing_dots=0;
   matched = CDR(match_res);
 
-  // Add default formals if needed
+  // Dummy head so we can use same logic when inserting at front or middle or
+  // back of pair list
 
-  if(def_frm || empt_frm) {
-    SEXP formals, form_cpy, matched_tail, matched_prev;
-    int one_match = 0; // Indicates we've had one TAG match between formals and matched args, which changes our appending strategy
-    formals = FORMALS(fun);
-    matched_prev = matched;
+  SEXP matched_prev = PROTECT(allocList(1));
+  SEXP match_track_prev = PROTECT(allocList(1));
+  SETCDR(matched_prev, matched);
+  SEXP matched_prev_cpy = matched_prev;
 
-    /*
-    Logic here is to compare matched arguments and formals pair-wise. In theory
-    these are in the same order with potentially default arguments missing, so
-    we just loop and sub in defaults when they are missing from matched
-    arguments.  Some complexities arise from illegally missing formals, but
-    basically they can just be treated the same way
-    */
+  /*
+  Logic here is to compare matched arguments and formals pair-wise. In theory
+  these are in the same order with potentially default arguments missing, so
+  we just loop and sub in defaults when they are missing from matched
+  arguments.  Some complexities arise from illegally missing formals, but
+  basically they can just be treated the same way.
+  */
+
+  SEXP formals, form_cp, form_tag;
+  formals = PROTECT(duplicate(FORMALS(fun)));
+
+  for(
+    matched2 = matched, form_cp = formals;
+    form_cp != R_NilValue; form_cp = CDR(form_cp)
+  ) {
+    int form_mode = 1, form_len = 1, form_drop = 0;
+    SEXP form_new = R_NilValue, form_new_last = R_NilValue;
+
+    if(TAG(matched2) != (form_tag = TAG(form_cp))) {
+      // This is an illegally missing formal
+      if(CAR(form_cp) == R_MissingArg) {
+        // If we don't want to keep missing formals, or dots are missing and we
+        // are asking to expand them, dump the formal
+        form_mode = 3;
+        if(
+          !empt_frm ||
+          (form_tag == R_DotsSymbol &&
+            (!strcmp("expand", dots_char) || !strcmp("exclude", dots_char))
+          )
+        ) {
+          continue;
+        }
+      } else {
+        form_mode = 2;  // This is a default formal
+        if(!def_frm) continue;
+        if(form_tag == R_DotsSymbol)
+          error("Logic Error: default value provided for dots arguments; contact maintainer.");
+      }
+      // Add the formal to our list
+
+      form_new = PROTECT(allocList(1));
+      SETCAR(form_new, CAR(form_cp));
+      SET_TAG(form_new, form_tag);
+    } else {
+      // User provided formal, only special handling we need is dots
+      form_mode = 1;
+      PROTECT(R_NilValue);  // stack balance
+      if(form_tag == R_DotsSymbol) {
+        if(!strcmp("exclude", dots_char)) {
+          form_drop = 1;
+          form_new = R_NilValue;  // stack balance
+        } else if(!strcmp("expand", dots_char)) {
+          form_drop = 1;
+          form_new = CAR(matched2); // stack balance
+          form_len = length(form_new);
+    } } }
+    // Update our originally matched call
+
+    if(form_drop) matched2 = CDR(matched2);
+    if(form_new != R_NilValue) {
+      for(
+        form_new_last = form_new; CDR(form_new_last) != R_NilValue;
+        form_new_last = CDR(form_new_last)
+      ) NULL;
+      if(matched2 != R_NilValue) listAppend(form_new, matched2);
+    } else {
+      form_new = matched2;
+    }
+    if(matched_prev != R_NilValue) {
+      SETCDR(matched_prev, form_new);
+    }
+    else error("Logic Error: matched prev should never be null; contact maintainer.");
+    if(form_new_last != R_NilValue) {
+      matched_prev = form_new_last;
+    } else if(matched2 != R_NilValue) {
+      matched_prev = matched2;
+    }
+    if(form_mode == 1) matched2 = CDR(matched2);
+
+    // Update the tracking list
+
+    SEXP track_new_cp, track_new_cp_last = R_NilValue,
+      track_new = PROTECT(allocList(form_len));
 
     for(
-      matched2 = matched; formals != R_NilValue;
-      formals=CDR(formals)
+      track_new_cp = track_new; track_new_cp != R_NilValue;
+      track_new_cp = CDR(track_new_cp)
     ) {
-      if(TAG(matched2) != TAG(formals)) {
-        int missing = 0;
+      SETCAR(track_new_cp, ScalarInteger(form_mode));
+      if(CDR(track_new_cp) == R_NilValue) track_new_cp_last = track_new_cp;
+    }
+    if(track_new_cp_last == R_NilValue)
+      error("Logic Error: last value not set in tracking list; contact maintainer.");
 
-        if(CAR(formals) == R_MissingArg) {  // This is an illegally missing formal
-          missing = 1;
-          if(TAG(formals) == R_DotsSymbol) {
-            missing_dots = 1;  // Need this for when we expand dots
-          }
-          if(!empt_frm) {
-            continue;
-        } }
-        /*
-        strategy is to make a copy of the formals, append, advance one, and
-        then re-attach the rest of the match arguments
-        */
-        if((empt_frm && missing) || def_frm) {
-          if(one_match) {  // Already have one matched
-            form_cpy = PROTECT(duplicate(formals));
-            matched_tail = matched2;
-            matched2 = matched_prev;
-            SETCDR(matched2, form_cpy);
-            UNPROTECT(1);
-            matched2 = CDR(matched2);
-            SETCDR(matched2, matched_tail);
-          } else {         // Don't have any matched yet, so add default formals at front
-            form_cpy = PROTECT(duplicate(formals));
-            matched_tail = matched2;
-            matched2 = form_cpy;
-            SETCDR(matched2, matched_tail);
-            matched = matched_prev = matched2;
-            one_match = 1;
-            UNPROTECT(1);
-          }
-        }
-      } else {          // User actually input something
-        if(!usr_frm) {  // But we don't want to keep it
-          if(matched2 == R_NilValue)
-            error("Logic Error: unexpectedly ran out of matched formals; contact maintainer");
-          if(one_match) {
-            SETCDR(matched_prev, CDR(matched2));
-            matched2 = matched_prev;
-          } else {
-            matched = matched_prev = CDR(matched2);
-          }
-        } else {
-          // Now we know we have at least one formal already dealt with, which
-          // affects the logic of how we append/modify the formals pair list,
-          // note how if we are not yet in one_match mode and we drop a user
-          // formal just above, we remain in not one_match mode
+    SETCDR(match_track_prev, track_new);
+    UNPROTECT(2);
 
-          one_match = 1;
-        }
-      }
-      // Now advance the matched formals to compare with the next formal in for loop
+    // Advance the pointers
 
-      if(matched2 != R_NilValue)
-        matched_prev = matched2;
-      matched2 = CDR(matched2);  // Need to advance here b/c if we continue, we do not want to advance matched2
-  } }
-  // Expand or drop dots as appropriate
-
-  if(   // Has to be expand or exclude (include doesn't require anything done here)
-    !strcmp("exclude", dots_char) ||
-    (!strcmp("expand", dots_char) && missing_dots) // If dots are missing and attempt to expand, remove them to avoid crash (plus, this makes sense)
-  ) {
-    if(TAG(matched) == R_DotsSymbol) {
-      matched = CDR(matched);                   // Drop dots
-    } else {
-      for(matched2 = matched; matched2 != R_NilValue; matched2 = CDR(matched2)) {
-        if(TAG(CDR(matched2)) == R_DotsSymbol) {
-          tail = CDDR(matched2);
-          SETCDR(matched2, tail);               // Drop dots
-          break;
-    } } }
-  } else if (!strcmp("expand", dots_char)) {
-    if(TAG(matched) == R_DotsSymbol) {
-      if(TYPEOF(CAR(matched)) != 2)
-        error("Logic Error, expected a pair list as the values");
-      matched = listAppend(CAR(matched), CDR(matched));  // Expand dots
-    } else {
-      for(matched2 = matched; matched2 != R_NilValue; matched2 = CDR(matched2)) {
-        if(TAG(CDR(matched2)) == R_DotsSymbol) {
-          tail = CDDR(matched2);
-          SETCDR(matched2, CADR(matched2));
-          listAppend(matched2, tail); // Expand dots
-          break;
-    } } }
-  } else if(strcmp("include", dots_char)) {
-    error("Logic Error: unexpected `dots` argument value %s", dots_char);
+    match_track_prev = CDR(match_track_prev);
   }
-  SETCDR(match_res, matched);
+  SETCDR(match_res, CDR(matched_prev_cpy));
 
   // - Finalize ----------------------------------------------------------------
 
-  UNPROTECT(7);
+  UNPROTECT(10);
   return match_res;
 }

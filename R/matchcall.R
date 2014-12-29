@@ -84,7 +84,16 @@ match_call <- function(
 #' Help Test Fun
 #'
 #' @keywords internal
+#' @export
 
-mc_test <- function(x) {
-  .Call(MC_test, x)
-}
+mc_test1 <- function()
+  .Call(MC_test1, list(sys.calls(), sys.frames(), sys.parents()))
+#' @export
+
+mc_test2 <- function()
+  .Call(MC_test2)
+#' @export
+
+mc_test3 <- function()
+  .Call(MC_test3, sys.calls(), sys.frames(), sys.parents())
+

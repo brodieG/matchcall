@@ -12,7 +12,9 @@ SEXP MC_match_call (
   SEXP dots, SEXP default_formals, SEXP empty_formals, SEXP user_formals,
   SEXP parent_offset, SEXP definition, SEXP sys_frames, SEXP sys_calls,
   SEXP sys_pars);
-SEXP MC_test (SEXP x);
+SEXP MC_test1 (SEXP x);
+SEXP MC_test2 ();
+SEXP MC_test3 (SEXP x, SEXP y, SEXP z);
 SEXP MC_get_frame_data(SEXP sys_frames, SEXP sys_calls, SEXP sys_pars, int par_off);
 SEXP MC_get_fun(SEXP frame, SEXP call);
 
@@ -23,11 +25,16 @@ SEXP MC_get_fun(SEXP frame, SEXP call);
 
 SEXP MC_SYM_matchcall;
 SEXP MC_SYM_quote;
+SEXP MC_SYM_calls;
+SEXP MC_SYM_frames;
+SEXP MC_SYM_pars;
 
 static const
 R_CallMethodDef callMethods[] = {
   {"match_call", (DL_FUNC) &MC_match_call, 9},
-  {"test", (DL_FUNC) &MC_test, 1},
+  {"test1", (DL_FUNC) &MC_test1, 1},
+  {"test2", (DL_FUNC) &MC_test2, 0},
+  {"test3", (DL_FUNC) &MC_test3, 3},
   {NULL, NULL, 0}
 };
 
@@ -39,6 +46,10 @@ void R_init_matchcall(DllInfo *info)
   */
   MC_SYM_quote = install("quote");
   MC_SYM_matchcall = install("match.call");
+  MC_SYM_calls = install("sys.calls");
+  MC_SYM_frames = install("sys.frames");
+  MC_SYM_pars = install("sys.parents");
+
   R_registerRoutines(info, NULL, callMethods, NULL, NULL);
   R_RegisterCCallable("matchcall", "MC_match_call", (DL_FUNC) MC_match_call);
   R_RegisterCCallable("matchcall", "MC_get_frame_data", (DL_FUNC) MC_get_frame_data);
@@ -50,12 +61,17 @@ void R_init_matchcall(DllInfo *info)
 |                                                                              |
 \* -------------------------------------------------------------------------- */
 
-SEXP MC_test(SEXP x) {
-  SEXP s, t, u;
-  PROTECT(s = allocList(2));
-  SETCDR(s, R_NilValue);
-  PrintValue(s);
-  UNPROTECT(1);
+SEXP MC_test1(SEXP x) {
+  return R_NilValue;
+}
+SEXP MC_test2() {
+  SEXP c1 = PROTECT(list1(MC_SYM_calls)); SET_TYPEOF(c1, LANGSXP); eval(c1, R_GlobalEnv);
+  SEXP c2 = PROTECT(list1(MC_SYM_frames)); SET_TYPEOF(c2, LANGSXP); eval(c2, R_GlobalEnv);
+  SEXP c3 = PROTECT(list1(MC_SYM_pars)); SET_TYPEOF(c3, LANGSXP); eval(c3, R_GlobalEnv);
+  UNPROTECT(3);
+  return R_NilValue;
+}
+SEXP MC_test3(SEXP x, SEXP y, SEXP z) {
   return R_NilValue;
 }
 // Based on subDots in src/main/unique.c

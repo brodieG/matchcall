@@ -12,6 +12,10 @@ SEXP MC_match_call (
   SEXP dots, SEXP default_formals, SEXP empty_formals, SEXP user_formals,
   SEXP parent_offset, SEXP definition, SEXP sys_frames, SEXP sys_calls,
   SEXP sys_pars);
+SEXP MC_match_call_internal (
+  SEXP dots, SEXP default_formals, SEXP empty_formals, SEXP user_formals,
+  SEXP parent_offset, SEXP definition, SEXP sys_frames, SEXP sys_calls,
+  SEXP sys_pars);
 SEXP MC_test1 (SEXP x);
 SEXP MC_test2 ();
 SEXP MC_test3 (SEXP x, SEXP y, SEXP z);
@@ -32,6 +36,7 @@ SEXP MC_SYM_pars;
 static const
 R_CallMethodDef callMethods[] = {
   {"match_call", (DL_FUNC) &MC_match_call, 9},
+  {"match_call_internal", (DL_FUNC) &MC_match_call_internal, 9},
   {"test1", (DL_FUNC) &MC_test1, 1},
   {"test2", (DL_FUNC) &MC_test2, 0},
   {"test3", (DL_FUNC) &MC_test3, 3},
@@ -52,6 +57,7 @@ void R_init_matchcall(DllInfo *info)
 
   R_registerRoutines(info, NULL, callMethods, NULL, NULL);
   R_RegisterCCallable("matchcall", "MC_match_call", (DL_FUNC) MC_match_call);
+  R_RegisterCCallable("matchcall", "MC_match_call_internal", (DL_FUNC) MC_match_call);
   R_RegisterCCallable("matchcall", "MC_get_frame_data", (DL_FUNC) MC_get_frame_data);
   R_RegisterCCallable("matchcall", "MC_get_fun", (DL_FUNC) MC_get_fun);
 }
@@ -253,6 +259,25 @@ SEXP MC_get_fun(SEXP frame, SEXP call) {
 \* -------------------------------------------------------------------------- */
 
 SEXP MC_match_call (
+  SEXP dots, SEXP default_formals, SEXP empty_formals, SEXP user_formals,
+  SEXP parent_offset, SEXP definition, SEXP sys_frames, SEXP sys_calls,
+  SEXP sys_pars
+) {
+  return CAR(
+    MC_match_call_internal(
+      dots, default_formals, empty_formals, user_formals, parent_offset,
+      definition, sys_frames, sys_calls, sys_pars
+  ) );
+}
+/*
+returns a pair list with two values:
+  1. the matched call
+  2. a pair list with same lenght as the args of matched call indicating whether
+     - the argument was user supplied (1)
+     - the argument was a default argument (2)
+     - the argument was missing (3)
+*/
+SEXP MC_match_call_internal (
   SEXP dots, SEXP default_formals, SEXP empty_formals, SEXP user_formals,
   SEXP parent_offset, SEXP definition, SEXP sys_frames, SEXP sys_calls,
   SEXP sys_pars
@@ -512,7 +537,6 @@ SEXP MC_match_call (
 
   // - Finalize ----------------------------------------------------------------
 
-  PrintValue(match_track_prev);
   UNPROTECT(10);
-  return match_res;
+  return list2(match_res, CDR(match_track_prev));
 }

@@ -191,3 +191,10 @@ unitizer_sect("definition", {
   fun2(z=1, 2, 3)
   fun2(z=1, x=2, 3, yellow=4)
 })
+unitizer_sect("internal", {
+  fun1 <- function(x, y, z=TRUE, w=letters[1:3])
+    matchcall:::match_call_internal(user.formals=TRUE, default.formals=TRUE, empty.formals=TRUE)
+  fun1(1, 2, 3, 4)
+  fun1(1, 2, 3)
+  fun1(1, z=2)
+})

@@ -81,6 +81,19 @@ match_call <- function(
     dots, default.formals, empty.formals, user.formals,
     n, definition, sys.frames(), sys.calls(), sys.parents()  # note slightly faster than `sys.frame` and `sys.call`, for some reason
   )
+#' Returns match type for each argument
+#'
+#' @keywords internal
+
+match_call_internal <- function(
+  n=1L, dots="expand", default.formals=FALSE, empty.formals=FALSE,
+  user.formals=TRUE, definition=NULL
+)
+  .Call(
+    MC_match_call_internal,
+    dots, default.formals, empty.formals, user.formals,
+    n, definition, sys.frames(), sys.calls(), sys.parents()  # note slightly faster than `sys.frame` and `sys.call`, for some reason
+  )
 #' Help Test Fun
 #'
 #' @keywords internal

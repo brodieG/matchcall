@@ -68,7 +68,15 @@ void R_init_matchcall(DllInfo *info)
 \* -------------------------------------------------------------------------- */
 
 SEXP MC_test1(SEXP x) {
-  return R_NilValue;
+  int a = 0;
+  int * point = &a;
+  Rprintf("Value %d\n", a);
+  Rprintf("Value %d\n", *point);
+  PrintValue(x);
+  SEXP res = PROTECT(R_tryEval(PROTECT(duplicate(x)), R_GlobalEnv, point));
+  Rprintf("Value %d\n", *point);
+  UNPROTECT(2);
+  return res;
 }
 SEXP MC_test2() {
   SEXP c1 = PROTECT(list1(MC_SYM_calls)); SET_TYPEOF(c1, LANGSXP); eval(c1, R_GlobalEnv);
@@ -408,7 +416,11 @@ SEXP MC_match_call_internal (
   t = PROTECT(list4(MC_SYM_matchcall, fun, u, ScalarLogical(0)));
   SET_TYPEOF(t, LANGSXP);
 
-  SEXP match_res = PROTECT(eval(t, sf_target));
+  int err_point_val = 0;
+  int * err_point = &err_point_val;
+  SEXP match_res = PROTECT(R_tryEval(t, sf_target, err_point));
+  if(* err_point)
+    error("Failed using `base::match.call` for argument mapping; see previous error.");
 
   // - Manipulate Result -------------------------------------------------------
 

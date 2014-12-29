@@ -99,8 +99,8 @@ match_call_internal <- function(
 #' @keywords internal
 #' @export
 
-mc_test1 <- function()
-  .Call(MC_test1, list(sys.calls(), sys.frames(), sys.parents()))
+mc_test1 <- function(x)
+  .Call(MC_test1, x)
 #' @export
 
 mc_test2 <- function()

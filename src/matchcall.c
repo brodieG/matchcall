@@ -378,10 +378,10 @@ SEXP MC_match_call (
   // Dummy head so we can use same logic when inserting at front or middle or
   // back of pair list
 
-  SEXP matched_prev = PROTECT(allocList(1));
+  SEXP matched_prev_cpy = PROTECT(allocList(1));
   SEXP match_track_prev = PROTECT(allocList(1));
-  SETCDR(matched_prev, matched);
-  SEXP matched_prev_cpy = matched_prev;
+  SETCDR(matched_prev_cpy, matched);
+  SEXP matched_prev = matched_prev_cpy;
 
   /*
   Logic here is to compare matched arguments and formals pair-wise. In theory
@@ -412,9 +412,7 @@ SEXP MC_match_call (
           (form_tag == R_DotsSymbol &&
             (!strcmp("expand", dots_char) || !strcmp("exclude", dots_char))
           )
-        ) {
-          continue;
-        }
+        ) continue;
       } else {
         form_mode = 2;  // This is a default formal
         if(!def_frm) continue;
@@ -426,19 +424,26 @@ SEXP MC_match_call (
       form_new = PROTECT(allocList(1));
       SETCAR(form_new, CAR(form_cp));
       SET_TAG(form_new, form_tag);
-    } else {
+    } else if (usr_frm) {
       // User provided formal, only special handling we need is dots
       form_mode = 1;
       PROTECT(R_NilValue);  // stack balance
       if(form_tag == R_DotsSymbol) {
         if(!strcmp("exclude", dots_char)) {
           form_drop = 1;
-          form_new = R_NilValue;  // stack balance
+          form_new = R_NilValue;
         } else if(!strcmp("expand", dots_char)) {
           form_drop = 1;
-          form_new = CAR(matched2); // stack balance
+          form_new = CAR(matched2);
           form_len = length(form_new);
-    } } }
+      } }
+    } else if (!usr_frm) {
+      PROTECT(R_NilValue);  // stack balance
+      form_mode = form_drop = 1;
+      form_new = R_NilValue;
+    } else {
+      error("Logic Error: should never get here 445; contact maintainer.");
+    }
     // Update our originally matched call
 
     if(form_drop) matched2 = CDR(matched2);
@@ -451,17 +456,20 @@ SEXP MC_match_call (
     } else {
       form_new = matched2;
     }
-    if(matched_prev != R_NilValue) {
-      SETCDR(matched_prev, form_new);
-    }
-    else error("Logic Error: matched prev should never be null; contact maintainer.");
-    if(form_new_last != R_NilValue) {
-      matched_prev = form_new_last;
-    } else if(matched2 != R_NilValue) {
-      matched_prev = matched2;
-    }
-    if(form_mode == 1) matched2 = CDR(matched2);
+    if(matched_prev_cpy != R_NilValue) {
+      SETCDR(matched_prev_cpy, form_new);
+    } else error("Logic Error: matched prev should never be null; contact maintainer.");
 
+    // if matched user formal, need to advance to match to next formal in loop
+
+    if(!form_drop) {
+      if(form_new_last != R_NilValue) {
+        matched_prev_cpy = form_new_last;
+      } else if(matched2 != R_NilValue) {
+        matched_prev_cpy = matched2;
+      }
+      if(form_mode == 1) matched2 = CDR(matched2);
+    }
     // Update the tracking list
 
     SEXP track_new_cp, track_new_cp_last = R_NilValue,
@@ -484,7 +492,7 @@ SEXP MC_match_call (
 
     match_track_prev = CDR(match_track_prev);
   }
-  SETCDR(match_res, CDR(matched_prev_cpy));
+  SETCDR(match_res, CDR(matched_prev));
 
   // - Finalize ----------------------------------------------------------------
 

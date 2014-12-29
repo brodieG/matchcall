@@ -387,7 +387,6 @@ SEXP MC_match_call (
 
   // - Manipulate Result -------------------------------------------------------
 
-  SEXP match_track2, match_track = R_NilValue;
   SEXP matched, matched2;
   matched = CDR(match_res);
 
@@ -395,9 +394,10 @@ SEXP MC_match_call (
   // back of pair list
 
   SEXP matched_prev_cpy = PROTECT(allocList(1));
-  SEXP match_track_prev = PROTECT(allocList(1));
+  SEXP match_track_prev_cpy = PROTECT(allocList(1));
   SETCDR(matched_prev_cpy, matched);
   SEXP matched_prev = matched_prev_cpy;
+  SEXP match_track_prev = match_track_prev_cpy;
 
   /*
   Logic here is to compare matched arguments and formals pair-wise. In theory
@@ -416,6 +416,8 @@ SEXP MC_match_call (
   ) {
     int form_mode = 1, form_len = 1, form_drop = 0;
     SEXP form_new = R_NilValue, form_new_last = R_NilValue;
+
+    // Determine what type of formal we're dealing with (missing, etc.)
 
     if(TAG(matched2) != (form_tag = TAG(form_cp))) {
       // This is an illegally missing formal
@@ -501,17 +503,16 @@ SEXP MC_match_call (
     if(track_new_cp_last == R_NilValue)
       error("Logic Error: last value not set in tracking list; contact maintainer.");
 
-    SETCDR(match_track_prev, track_new);
+    SETCDR(match_track_prev_cpy, track_new);
+    match_track_prev_cpy = track_new_cp_last;
     UNPROTECT(2);
 
-    // Advance the pointers
-
-    match_track_prev = CDR(match_track_prev);
   }
   SETCDR(match_res, CDR(matched_prev));
 
   // - Finalize ----------------------------------------------------------------
 
+  PrintValue(match_track_prev);
   UNPROTECT(10);
   return match_res;
 }

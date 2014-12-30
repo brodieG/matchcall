@@ -57,7 +57,7 @@ void R_init_matchcall(DllInfo *info)
 
   R_registerRoutines(info, NULL, callMethods, NULL, NULL);
   R_RegisterCCallable("matchcall", "MC_match_call", (DL_FUNC) MC_match_call);
-  R_RegisterCCallable("matchcall", "MC_match_call_internal", (DL_FUNC) MC_match_call);
+  R_RegisterCCallable("matchcall", "MC_match_call_internal", (DL_FUNC) MC_match_call_internal);
   R_RegisterCCallable("matchcall", "MC_get_frame_data", (DL_FUNC) MC_get_frame_data);
   R_RegisterCCallable("matchcall", "MC_get_fun", (DL_FUNC) MC_get_fun);
 }

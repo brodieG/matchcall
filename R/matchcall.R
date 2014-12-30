@@ -97,15 +97,12 @@ match_call_internal <- function(
 #' Help Test Fun
 #'
 #' @keywords internal
-#' @export
 
 mc_test1 <- function(x)
   .Call(MC_test1, x)
-#' @export
 
 mc_test2 <- function()
   .Call(MC_test2)
-#' @export
 
 mc_test3 <- function()
   .Call(MC_test3, sys.calls(), sys.frames(), sys.parents())

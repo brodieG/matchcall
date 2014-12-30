@@ -4,11 +4,11 @@
 \title{Match Closure Arguments To Formals}
 \usage{
 match_call(n = 1L, dots = "expand", default.formals = FALSE,
-  empty.formals = FALSE, eval.formals = FALSE, user.formals = TRUE)
+  empty.formals = FALSE, user.formals = TRUE, definition = NULL)
 }
 \arguments{
 \item{n}{integer(1L) how many frames to look up the call stack, analogous to
-the \code{`n`} parameter for \code{`\link{sys.parent}`}.}
+the \code{n} parameter for \code{\link{sys.parent}}.}
 
 \item{dots}{character(1L) "exclude": do not include dots, "include": include
 them, "expand": include and expand (note last two only include dots if
@@ -22,33 +22,38 @@ to tolerate in closure definitions.}
 \item{empty.formals}{set to TRUE to include formals that were not specified
 and do not have default values}
 
-\item{eval.formals}{set to TRUE if you want the argument values to be
-evaluated (defaults in invoking function body, rest in parent of invoking
-function).  Note it is the argument expression that is evaluated, not the
-argument itself.  This should only make a difference in functions where
-the argument is modified in the function body before \code{`match_call`}
-is invoked (this will return the original expression, not the modified one).}
-
 \item{user.formals}{set to FALSE if you want to exclude arguments that the
 user specified; this should almost never be needed unless you specifically
-want to know what arguments are using default values}
+want to know what arguments are using default values (in which case you
+also be setting default.formals to TRUE)}
+
+\item{definition}{same as \code{definition} in \code{\link{match.call}},
+though shouldn't be needed most of the time}
 }
 \value{
-the call that invoked the function match_call() is invoked from (as a
-  list if `eval.formals`==TRUE)
+the parent call that led to the invocation of match_call()
 }
 \description{
-Similar to \code{`\link{match.call}`}, but is designed specifically to match
-calls from the dynamic call stack.  Which call is matched is controlled by the
-\code{`n`} argument, which is analgous to the \code{`n`} argument
-for \code{`\link{sys.parent}`}.
+Similar to \code{\link{match.call}}, but is designed specifically to match
+calls at varying depts from the dynamic call stack.  Which call is matched
+is controlled by the \code{n} argument, which is analgous to the \code{n}
+argument for \code{\link{sys.parent}}.  \code{match_call} also addresses some
+potentially unexpected behavior with \code{\link{match.call}} with calls
+involving dots (\code{...}) in corner cases.
 }
 \details{
-You can also use \code{`match.call`} to match arbitrary calls from the
-call stack, but it is simpler to do so using \code{`match_call`}.  See examples
-for illustration of differences between \code{`\link{match.call}`} and
-\code{`match_call`}.  Additionally, there are some corner cases where
-\code{`\link{match.call}`} does not behave as expected (see vignette).
+You can also use \code{match.call} to match arbitrary calls from the
+call stack, but it is simpler to do so using \code{match_call}, particularly
+when the call stack and the lexical stack are not the same. See examples
+for illustration of differences between \code{\link{match.call}} and
+\code{match_call}.
+
+\code{match_call} will also include unspecified defaults and missing
+arguments if requested (see \code{default.formals} and \code{empty.formals}).
+
+For a more detailed discussion of the exact nature of the dots corner case
+issues with \code{match.call}, see the vignette.  Briefly: these crop up when
+there are multiple calls using dots involved.
 }
 \examples{
 # Compare `match.call` and `match_call`
@@ -58,15 +63,28 @@ fun1 <- function(a, b) {
   print(match_call())
 
   cat("\\n**Matching Grand-Parent Call**\\n")
-  print(match.call(fun2, sys.call(sys.parent())))
+  print(match.call(call=sys.call(sys.parent())))
   print(match_call(2))
 }
 fun2 <- function(c, d) fun1(a + 1, b - 1)
 fun2(25, pi() + 3)
-# Other examples
+
+# Recover default formals
 fun <- function(a, b, c=TRUE, ...) {
   match_call(default.formals=TRUE, dots="include")
 }
 fun(5, 6, x=list(1:10, FALSE))
+
+# If Dynamic and Lexical Stacks not the same, we need to use `definition`
+# param to `match.call`; `match_call` on the other hand works just fine
+
+fun3a <- function(x) fun4a()
+fun4a <- function() match_call(2)
+
+fun3b <- function(x) fun4b()  # Note: fun4b defined outside fun3b
+fun4b <- function() match.call(definition=fun3b, call=sys.call(sys.parent()))
+
+fun3a(1 + 1)       # `match_call` works
+fun3b(1 + 1)       # `match.call` also works, but only if we explicitly specify `definition`
 }
 

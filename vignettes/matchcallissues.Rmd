@@ -1,8 +1,10 @@
 ---
 title: "`match.call` Corner Cases"
 author: "Brodie Gaslam"
-date: "`r Sys.Date()`"
-output: rmarkdown::html_vignette
+output:
+    rmarkdown::html_vignette:
+        toc: true
+        css: styles.css
 
 vignette: >
   %\VignetteIndexEntry{match.call Corner Cases}
@@ -20,7 +22,7 @@ corner cases:
 * And are called by functions that forward `...`
 
 This issue cropped up when trying to match calls that happened earlier in the
-dynamic call stack to the call to `match.call`.
+dynamic call stack to the call to `match.call` (e.g. the grand-parent call).
 
 ## An Example of the Problem
 
@@ -40,8 +42,8 @@ Notice how:
 
 * We lost the first argument (999)
 * The second and third arguments both show up as `..X` instead of their expressions
-* The second argument is mis-matched to `b` (well, you can't tell that from the
-  above, but trust me, it is).
+* The second argument is mis-matched to `b` (this isn't obvious from the above,
+  but it is mismatched).
 
 Also, note that `sys.call(sys.parent())` is not the same as the default value for
 argument `call` of `match.call` even though it looks like it is.  The difference
@@ -51,22 +53,26 @@ whereas the default `call` value is evaluated within `match.call`'s context.
 ## Source of Problem
 
 The reason `match.call` doesn't work properly in the aforementioned circumstances
-is that `match.call` always uses the context of the function that invokes
+is that `match.call` always uses the lexical stack of the function that invokes
 `match.call` to substitute the `...` argument, irrespective of where the call
 you are attempting to match is issued.  In our simple example, `match.call` will
-be matching the dots in the parent context of `fun_par`, instead of the parent
-context of `fun_gpar`.
+be matching the dots in the **lexical** parent of `fun_par`, instead of in the
+**calling** frame of `fun_gpar`.  In this case, `match.call` is matching to the
+dots in `fun_gpar <- function(b, ...) {` on the second line instead of the dots
+in `fun_gpar(...)` on the 7th line.  These look similar, but are really
+completely different.
 
-Since `fun_gpar` has a formal argument `b` in addition to `...`, when we invoke
-`fun_gpar(...)` the actual `...` argument inside `fun_gpar` will be the original
-`...` argument passed to `fun_gpar`, _less_ the explicit formal arguments that
-are matched.  In this case, `b` positionally matches the 999, so the `...` inside
+This mismatch causes the problems described above.  Since `fun_gpar` has a
+formal argument `b` in addition to `...`, when we invoke `fun_gpar(...)` the
+actual `...` argument inside `fun_gpar` will be the original `...` argument
+passed to `fun_gpar`, **less** the explicit formal arguments that are matched.
+In this case, `b` positionally matches the 999, so the `...` inside
 `fun_gpar` no longer contains 999, but `match.call` uses this 999-less `...` to
-match the `fun_gpar(...)` call, not the original `...` in the parent context of
-`fun_gpar`.
+match the `fun_gpar(...)` call, not the original `...` in the dynamic parent
+frame parent of `fun_gpar`.
 
 This behavior is not unreasonable since `match.call` doesn't provide any way to
-give it the correct context for substituting the dots in.
+give it the correct frame for substituting the dots in.
 
 In addition, when substituting dots, R will replace any non-constant values with
 `..X`, etc.  Not entirely clear why this happens, but it is done in this following
@@ -85,6 +91,7 @@ for(a = dots, b = rval, i = 1; i <= len; a = CDR(a), b = CDR(b), i++) {
       SETCAR(b, t);
 }
 ```
+
 ## More Examples
 
 ### Scenario Summary
@@ -102,11 +109,11 @@ problems with `match.call`:
    doesn't have any arguments, so the lexically earliest set of dots is empty.
 3. If `fun_par` doesn't have any formals, then `match.call` will grab
    the `...` values, but with limitations:
-   a. unnamed arguments in `...` will be consumed by the named formals of
-      `fun_gpar` to the extent those are not otherwise matched, but
-     these consumed arguments will not show up in the output of `match.call`
-   b. If the call to `fun_gpar` involves expressions or symbols, these are
-      replaced with `..1`, `..2`, etc. instead of being captured properly
+     a. unnamed arguments in `...` will be consumed by the named formals of
+        `fun_gpar` to the extent those are not otherwise matched, but
+       these consumed arguments will not show up in the output of `match.call`
+     b. If the call to `fun_gpar` involves expressions or symbols, these are
+        replaced with `..1`, `..2`, etc. instead of being captured properly
 
 See below for actual code examples
 
@@ -122,16 +129,14 @@ fun1(3, "test", x=45, zest="lemon")
 
 ### Scenario 2:
 
-note here we make `fun_par` an anonymous function for the sake of compactness
-
 ```{r}
 fun2 <- function(a, ...) {
   fun_gpar <- function(b, ...) {
-    (function(...) match.call(fun_gpar, sys.call(sys.parent()), expand.dots=F))()
+    fun_par <- function(...) match.call(fun_gpar, sys.call(sys.parent()), expand.dots=F)
+    fun_par()
   }
   fun_gpar(a, ...)
 }
-
 fun2(3, "test", x=45, zest="lemon")
 ```
 
@@ -139,7 +144,8 @@ fun2(3, "test", x=45, zest="lemon")
 ```{r}
 fun3 <- function(a, ...) {
   fun_gpar <- function(b, c, d, ...) {
-    (function() match.call(fun_gpar, sys.call(sys.parent()), expand.dots=F))()
+    fun_par <- function() match.call(fun_gpar, sys.call(sys.parent()), expand.dots=F)
+    fun_par()
   }
   fun_gpar(a, ...)
 }

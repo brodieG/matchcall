@@ -4,11 +4,13 @@ unitizer_sect("Input Errors", {
   match_call(dots=1)
   match_call(dots="explode")
   match_call(dots=NA_character_)
-  match_call(0)
+  match_call(-1)
   match_call(default.formals=c(TRUE, FALSE))
   match_call(empty.formals=NA)
 })
 unitizer_sect("Simple Tests", {
+  match_call(0)
+
   fun <- function(x, y, z=TRUE) match_call()
 
   fun(1, 2, 3)
@@ -64,7 +66,7 @@ unitizer_sect("Examples that break match.call", {
   fun3(3, "test", 59, x=45, zest="lemon", (58), (60))
 })
 unitizer_sect(
-  "Doc Example",
+  "Doc Examples",
   compare=unitizerItemTestsFuns(output=identical),  # Need to check output here
 {
   fun1 <- function(a, b) {
@@ -78,7 +80,29 @@ unitizer_sect(
   }
   fun2 <- function(c, d) fun1(a + 1, b - 1)
   fun2(25, pi() + 3)
+
+  fun <- function(a, b, c=TRUE, ...)
+    match_call(default.formals=TRUE, dots="include")
+  fun(5, 6, x=list(1:10, FALSE))
+
+  fun3a <- function(x) fun4a()
+  fun4a <- function() match_call(2)
+
+  fun3b <- function(x) fun4b()  # Note: fun4b defined outside fun3b
+  fun4b <- function() match.call(definition=fun3b, call=sys.call(sys.parent()))
+
+  fun3a(1 + 1)       # `match_call` works
+  fun3b(1 + 1)       # `match.call` also works, but only if we explicitly specify `definition`
 })
+unitizer_sect(
+  "Frame Depth", {
+  fun1 <- function(x) match_call(x)
+  fun2 <- function(y) fun1(y)
+  fun3 <- function(z) fun2(z)
+  fun4 <- function(w) fun3(w)
+
+  lapply(0:5, fun4)
+} )
 unitizer_sect(
   "Default Formals", {
 
@@ -98,4 +122,79 @@ unitizer_sect(
   fun2(1, 2, 3, 4)
   fun2(z=1, w=2, 3, 4)
 
+})
+unitizer_sect(
+  "Empty Formals", {
+
+  fun1 <- function(x, y, z=TRUE, w=letters[1:3]) match_call(empty.formals=TRUE)
+
+  fun1()
+
+  fun2 <- function(x, y, ..., z, w=letters[1:3])
+    match_call(default.formals=TRUE, dots="include", empty.formals=TRUE)
+
+  fun2()
+  fun2(z=3)
+  fun2(y=5)
+  fun2(1, 2, 3, 4)
+
+  fun3 <- function(x, y, ..., z, w=letters[1:3])
+    match_call(empty.formals=TRUE, dots="exclude")
+
+  fun3()
+
+  fun4 <- function(x, y, ..., z, w=letters[1:3])
+    match_call(empty.formals=TRUE, dots="expand")
+
+  fun4()   # Expand dots even if empty, should disappear
+
+})
+unitizer_sect(
+  "Exclude User Formals", {
+
+  fun1 <- function(x, y, z=TRUE, w=letters[1:3])
+    match_call(user.formals=FALSE, default.formals=TRUE)
+
+  fun1()
+  fun1(z=3)
+  fun1(z=3, w=5)
+  fun1(1, 2)
+
+  fun2 <- function(x, y, z=TRUE, w=letters[1:3])
+    match_call(user.formals=FALSE, default.formals=TRUE, empty.formals=TRUE)
+
+  fun2()
+  fun2(z=3)
+  fun2(z=3, w=5)
+  fun2(1, 2)
+
+  fun3 <- function(x, y, ..., z=TRUE, w=letters[1:3])
+    match_call(user.formals=FALSE, default.formals=TRUE, empty.formals=TRUE)
+
+  fun3()
+  fun3(z=3)
+  fun3(z=3, w=5)
+  fun3(z=3, w=5, q="hello")
+  fun3(1, 2)
+
+  fun4 <- function(x, y, ..., z=TRUE, w=letters[1:3])
+    match_call(user.formals=FALSE, default.formals=TRUE, empty.formals=TRUE, dots="include")
+
+  fun4()
+  fun3(z=3, w=5, q="hello")  # should drop dots
+})
+unitizer_sect("definition", {
+  fun1 <- function(xylophone, zebra, yellow) NULL
+  fun2 <- function(x, y, z, ...) match_call(definition=fun1)
+
+  fun2(1, 2, 3)
+  fun2(z=1, 2, 3)
+  fun2(z=1, x=2, 3, yellow=4)
+})
+unitizer_sect("internal", {
+  fun1 <- function(x, y, z=TRUE, w=letters[1:3])
+    matchcall:::match_call_internal(user.formals=TRUE, default.formals=TRUE, empty.formals=TRUE)
+  fun1(1, 2, 3, 4)
+  fun1(1, 2, 3)
+  fun1(1, z=2)
 })

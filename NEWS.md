@@ -1,3 +1,9 @@
+matchcall 0.2.1
+--------------------------------------------------------------------------------
+
+Internal changes with no user visible behavior changes (see git log if you're
+really curious).
+
 matchcall 0.2.0
 --------------------------------------------------------------------------------
 

@@ -1,3 +1,10 @@
+matchcall 0.2.2
+--------------------------------------------------------------------------------
+
+This package is now deprecated in favor of the internal `match.call` since that
+one added the `envir` argument in R 3.2.0 and that fixes most corner cases this
+package was designed to address.
+
 matchcall 0.2.1
 --------------------------------------------------------------------------------
 

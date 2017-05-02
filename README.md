@@ -1,6 +1,13 @@
 matchcall
 =========
 
+[![Project Status: Unsupported – The project has reached a stable, usable state but the author(s) have ceased all work on it.](http://www.repostatus.org/badges/latest/unsupported.svg)](http://www.repostatus.org/#unsupported)
+
+> As of R 3.2.0 `match.call` gained an `envir` parameter that fixes most of the
+> issues this package is designed to address.  Additionally, "fixing" the `..1`,
+> etc. issue is probably not a good idea since we lose the evaluation
+> environment for the promises since dots may have been forwarded several times.
+
 ## Overview
 
 Similar to `match.call`, but is designed specifically to match calls from the
